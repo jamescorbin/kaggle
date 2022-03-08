@@ -73,7 +73,7 @@ def build_model(conv2d_dim: int,
     x = dense0_layer(x)
     x = dense1_layer(x)
     model = tf.keras.Model(inputs=[img_inputs],
-                           outputs=x,
+                           outputs=[x],
                            name="digit_model")
     model.compile(
         loss=loss,
@@ -84,7 +84,7 @@ def build_model(conv2d_dim: int,
 def train_model(model: tf.keras.Model,
                 ds_train: tf.data.Dataset,
                 ds_valid: tf.data.Dataset,
-                ):
+                ) -> None:
     model.fit(
             ds_train,
             validation_data=ds_valid,
