@@ -5,7 +5,7 @@ import os
 import sys
 import logging
 import itertools
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import re
 import pandas as pd
 import numpy as np
@@ -162,7 +162,7 @@ def bert_tokenize(df: pd.DataFrame, col: str):
 
 def tf_tokenizer(df: pd.DataFrame,
                  col: str,
-                 num_unique_words: int,
+                 num_unique_words: Optional[int]=None,
                  ):
     """
     Tokenize text column ${col} in dataframe ${df} using
@@ -182,15 +182,24 @@ def tf_tokenizer(df: pd.DataFrame,
     """
     bdry = []
     tokenizer = (
-        tf.keras.preprocessing.text.Tokenizer(num_words=num_unique_words))
+        tf.keras.preprocessing.text.Tokenizer(
+                                    num_words=num_unique_words,
+                                    oov_token="unk",))
     tokenizer.fit_on_texts(df[col].values)
-    word_ids = tf.keras.preprocessing.sequence.pad_sequences(
-        tokenizer.texts_to_sequences(df[col].values))
-    _f = lambda x: [1]*(len(tokenizer.tokenize(x))+len(bdry))
-    masks = tf.keras.preprocessing.sequence.pad_sequences(
-                                        df[col].apply(_f))
+    config = tokenizer.get_config()
+    num_unique_words = len(config["index_word"])
+    prewords = tokenizer.texts_to_sequences(df[col].values)
+    print("PREWORDS", prewords)
+    words_ids = tf.keras.preprocessing.sequence.pad_sequences(prewords)
+    #_f = lambda x: [1]*(len(tokenizer.texts_to_sequences(x))+len(bdry))
+    #masks = tf.keras.preprocessing.sequence.pad_sequences(
+    #                                    df[col].apply(_f))
+    premask = [[1 for i in arr] for arr in prewords]
+    masks = tf.keras.preprocessing.sequence.pad_sequences(premask)
+
+    print("MASKS SHAPE", masks.shape)
     type_ids = np.zeros(words_ids.shape, dtype=np.int32)
-    return tokenizer, num_unique_words, word_ids, masks, type_ids
+    return tokenizer, num_unique_words, words_ids, masks, type_ids
 
 def load_pretrained_bert(url_bert: str=("https://tfhub.dev/tensorflow"
                                 "/bert_en_uncased_L-12_H-768_A-12/2"),
@@ -198,9 +207,24 @@ def load_pretrained_bert(url_bert: str=("https://tfhub.dev/tensorflow"
     bert_layer = hub.KerasLayer(url_bert, trainable=True)
     return bert_layer
 
-def build_two_layer_model():
+def build_two_layer_model(sequence_length: int,
+                          num_unique_words: int,
+                          embed_dim: int,
+                          units_0: int,
+                          units_1: int,
+                          ):
     out_dim = 2
-    input0 = tf.keras.Input((sequence_length), dtype=tf.dtypes.int64)
+    #input0 = tf.keras.Input((sequence_length), dtype=tf.dtypes.int32)
+    input0 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="words_ids",)
+    input1 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="mask",)
+    input2 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="segment_ids",)
+    inputs = [input0, input1, input2]
     embed0 = tf.keras.layers.Embedding(
             num_unique_words,
             embed_dim,
@@ -208,12 +232,12 @@ def build_two_layer_model():
             name="word_embedding",)
     lstm0 = tf.keras.layers.Bidirectional(
             tf.keras.layers.GRU(
-                units,
+                units_0,
                 name="lstm_0",
                 return_sequences=True,))
     lstm1 = tf.keras.layers.Bidirectional(
             tf.keras.layers.GRU(
-                units,
+                units_1,
                 name="lstm_1",))
     dense0 = tf.keras.layers.Dense(
             out_dim,
@@ -228,7 +252,7 @@ def build_two_layer_model():
     x = lstm0(x)
     x = lstm1(x)
     x = dense0(x)
-    model = tf.keras.Model(inputs=[input0], outputs=[x],
+    model = tf.keras.Model(inputs=inputs, outputs=[x],
                            name="bi-directional")
     model.compile(
             optimizer=optimizer,
@@ -337,12 +361,42 @@ def prep_tf_logging():
         restore_best_weights=True,)
     return [tensorboard_callback, early_stopping]
 
+def make_dataset(inputs,
+                 outputs,
+                 batch_size: int=128,
+                 shards: int=10,
+                 validation_k: int=3):
+    xtups = []
+    for inp in inputs:
+        xtups.append(
+            tf.data.Dataset.from_tensor_slices(inp))
+    x = tf.data.Dataset.zip(tuple(xtups))
+    ytups = []
+    for inp in outputs:
+        ytups.append(
+            tf.data.Dataset.from_tensor_slices(inp))
+    y = tf.data.Dataset.zip(tuple(ytups))
+    x = tf.data.Dataset.zip((x, y))
+    x_train = (x.enumerate()
+                .filter(lambda x, y: x % shards > validation_k)
+                .map(lambda x, y: y))
+    x_valid = (x.enumerate()
+                .filter(lambda x, y: x % shards <= validation_k)
+                .map(lambda x, y: y))
+    x_train = x_train.batch(batch_size)
+    x_valid = x_valid.batch(batch_size)
+    return x_train, x_valid
+
 def main():
     df_train, y_train, id_train, df_test, id_test = load_data()
     stopwords = download_stopwords()
     df_train = prep(df_train, stopwords=stopwords)
-    tokenizer, num_unique_words, word_ids, masks, type_ids = (
+    if True:
+        tokenizer, num_unique_words, words_ids, masks, type_ids = (
                                 bert_tokenize(df_train, "text"))
+    else:
+        tokenizer, num_unique_words, words_ids, masks, type_ids = (
+                                tf_tokenizer(df_train, "text"))
     sequence_length = word_ids.shape[1]
     logger.info(f"Sequence length: {sequence_length}")
     logger.info(f"Vocab size: {num_unique_words}")
@@ -350,6 +404,21 @@ def main():
     model = build_bert_model(bert_layer,
                              sequence_length=sequence_length,
                              units_0=100,)
+    """
+    model = build_two_layer_model(
+                             sequence_length=sequence_length,
+                             num_unique_words=num_unique_words,
+                             embed_dim=200,
+                             units_0=100,
+                             units_1=100,)
+    """
+    x_train, x_valid = make_dataset(
+                                    [word_ids, masks, type_ids],
+                                    [y_train],)
+    hist = model.fit(x_train,
+                     epochs=8,
+                     validation_data=x_valid,)
+    model.summary()
 
 if __name__=="__main__":
     main()
