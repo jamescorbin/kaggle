@@ -4,8 +4,9 @@
 import os
 import sys
 import logging
+import json
 import itertools
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 import re
 import pandas as pd
 import numpy as np
@@ -125,7 +126,7 @@ def prep(df: pd.DataFrame, stopwords: List[str]) -> pd.DataFrame:
     df[col] = df[col].str.strip()
     return df
 
-def bert_tokenize(df: pd.DataFrame, col: str):
+def bert_tokenize(text_arr: np.array):
     """
     Perform preprocessing required for the BERT model.
 
@@ -144,60 +145,45 @@ def bert_tokenize(df: pd.DataFrame, col: str):
     """
     gs_folder_bert = ("gs://cloud-tpu-checkpoints"
                       "/bert/keras_bert/uncased_L-12_H-768_A-12")
-    bdry = ["[CLS]", "[SEP]"]
+    vocab_file = os.path.join(gs_folder_bert, "vocab.txt")
+    bdry = ["[CLS] ", " [SEP]"]
     tf.io.gfile.listdir(gs_folder_bert)
     tokenizer = official.nlp.bert.tokenization.FullTokenizer(
-        vocab_file=os.path.join(gs_folder_bert, "vocab.txt"),
-        do_lower_case=True)
+                    vocab_file=vocab_file,
+                    do_lower_case=True)
+    _f = lambda x: bdry[0] + x + bdry[1]
+    text_arr = _f(text_arr)
     bert_token = (lambda x: tokenizer.convert_tokens_to_ids(
-            bdry[0] + tokenizer.tokenize(x) + bdry[1]))
+                                tokenizer.tokenize(x)))
     num_unique_words = len(tokenizer.vocab)
     words_ids = tf.keras.preprocessing.sequence.pad_sequences(
                                     df[col].apply(bert_token))
-    _f = lambda x: [1]*(len(tokenizer.tokenize(x))+len(bdry))
+    _f = lambda x: [1]*(len(tokenizer.tokenize(x)))
     masks = tf.keras.preprocessing.sequence.pad_sequences(
                                         df[col].apply(_f))
     type_ids = np.zeros(words_ids.shape, dtype=np.int32)
     return tokenizer, num_unique_words, words_ids, masks, type_ids
 
-def tf_tokenizer(df: pd.DataFrame,
-                 col: str,
+def tf_tokenizer(
+                text_arr: np.array,
                  num_unique_words: Optional[int]=None,
                  ):
-    """
-    Tokenize text column ${col} in dataframe ${df} using
-    tensorflow.keras.preprocessing.text.Tokenizer taken
-    ${num_words} number of words.
-
-    Args:
-        df (pandas.DataFrame): Dataframe to be transformed.
-        col (str): Column of text data in ${df}.
-        num_words (int): Number of words to take in enumerated alphabet.
-
-    Returns:
-        tokenizer (tensorflow.keras.preprocessing.text.Tokenizer):
-            Tokenizer fit to the data.
-        num_unique_words (int): Number of words in the tokenized alphabet.
-        word_cols (list(str)): New columns of tokenized data.
-    """
     bdry = []
-    tokenizer = (
-        tf.keras.preprocessing.text.Tokenizer(
+    tokenizer = tf.keras.preprocessing.text.Tokenizer(
                                     num_words=num_unique_words,
-                                    oov_token="unk",))
-    tokenizer.fit_on_texts(df[col].values)
+                                    oov_token="unk",)
+    tokenizer.fit_on_texts(text_arr)
     config = tokenizer.get_config()
     num_unique_words = len(config["index_word"])
-    prewords = tokenizer.texts_to_sequences(df[col].values)
-    print("PREWORDS", prewords)
+    prewords = tokenizer.texts_to_sequences(text_arr)
+    index_word = json.loads(config["index_word"])
+    logger.info("text_arr " + text_arr[0])
+    logger.info("encoding" + str(prewords[0]))
+    output = [index_word[str(i)] for i in prewords[0]]
+    logger.info("translate" + str(output))
     words_ids = tf.keras.preprocessing.sequence.pad_sequences(prewords)
-    #_f = lambda x: [1]*(len(tokenizer.texts_to_sequences(x))+len(bdry))
-    #masks = tf.keras.preprocessing.sequence.pad_sequences(
-    #                                    df[col].apply(_f))
     premask = [[1 for i in arr] for arr in prewords]
     masks = tf.keras.preprocessing.sequence.pad_sequences(premask)
-
-    print("MASKS SHAPE", masks.shape)
     type_ids = np.zeros(words_ids.shape, dtype=np.int32)
     return tokenizer, num_unique_words, words_ids, masks, type_ids
 
@@ -213,14 +199,13 @@ def build_two_layer_model(sequence_length: int,
                           units_0: int,
                           units_1: int,
                           ):
-    out_dim = 2
-    #input0 = tf.keras.Input((sequence_length), dtype=tf.dtypes.int32)
+    out_dim = 1
     input0 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
                             name="words_ids",)
     input1 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
-                            name="mask",)
+                            name="masks",)
     input2 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
                             name="segment_ids",)
@@ -241,7 +226,7 @@ def build_two_layer_model(sequence_length: int,
                 name="lstm_1",))
     dense0 = tf.keras.layers.Dense(
             out_dim,
-            activation=tf.nn.softmax,
+            activation=tf.nn.sigmoid,
             name="final",)
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
     metrics = [tf.keras.metrics.BinaryAccuracy()]
@@ -260,9 +245,26 @@ def build_two_layer_model(sequence_length: int,
             metrics=metrics,)
     return model
 
-def build_conv_model():
-    out_dim = 2
-    input0 = tf.keras.Input((sequence_length), dtype=tf.dtypes.int64)
+def build_conv_model(
+			sequence_length: int,
+			num_unique_words: int,
+			embed_dim: int,
+			filters: int,
+			window: int,
+			pool_size: int,
+			units: int,
+			dense_0_dim: int,
+			):
+    out_dim = 1
+    input0 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="words_ids",)
+    input1 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="masks",)
+    input2 = tf.keras.Input(sequence_length,
+                            dtype=tf.dtypes.int32,
+                            name="segment_ids",)
     embed0 = tf.keras.layers.Embedding(
             num_unique_words,
             embed_dim,
@@ -284,7 +286,7 @@ def build_conv_model():
             name="dense_0",)
     dense1 = tf.keras.layers.Dense(
             out_dim,
-            activation=tf.nn.softmax,
+            activation=tf.nn.sigmoid,
             name="dense_1",)
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
     metrics = [tf.keras.metrics.BinaryAccuracy()]
@@ -294,7 +296,7 @@ def build_conv_model():
     x = embed0(x)
     x = conv0(x)
     x = pool0(x)
-    x = flat0(x0)
+    x = flat0(x)
     x = dense0(x)
     x = dense1(x)
     model = tf.keras.Model(inputs=[input0], outputs=[x],
@@ -308,13 +310,13 @@ def build_conv_model():
 def build_bert_model(bert_layer: tf.keras.layers.Layer,
                      sequence_length: int,
                      units_0: int):
-    out_dim = 2
+    out_dim = 1
     input0 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
                             name="word_ids",)
     input1 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
-                            name="mask",)
+                            name="masks",)
     input2 = tf.keras.Input(sequence_length,
                             dtype=tf.dtypes.int32,
                             name="segment_ids",)
@@ -325,7 +327,7 @@ def build_bert_model(bert_layer: tf.keras.layers.Layer,
     dropout0 = tf.keras.layers.Dropout(0.5)
     dense1 = tf.keras.layers.Dense(
             out_dim,
-            activation=tf.nn.softmax,
+            activation=tf.nn.sigmoid,
             name="final",)
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001)
     metrics = [tf.keras.metrics.BinaryAccuracy()]
@@ -361,16 +363,12 @@ def prep_tf_logging():
         restore_best_weights=True,)
     return [tensorboard_callback, early_stopping]
 
-def make_dataset(inputs,
+def make_dataset(input_dict: Dict[str, np.array],
                  outputs,
                  batch_size: int=128,
                  shards: int=10,
                  validation_k: int=3):
-    xtups = []
-    for inp in inputs:
-        xtups.append(
-            tf.data.Dataset.from_tensor_slices(inp))
-    x = tf.data.Dataset.zip(tuple(xtups))
+    x = tf.data.Dataset.from_tensor_slices(input_dict)
     ytups = []
     for inp in outputs:
         ytups.append(
@@ -387,19 +385,55 @@ def make_dataset(inputs,
     x_valid = x_valid.batch(batch_size)
     return x_train, x_valid
 
+def transform_dataset(df: pd.DataFrame,
+                      stopwords: List[str],
+                      tokenizer,
+                      sequence_length: int):
+    df = prep(df, stopwords=stopwords)
+    text_arr = df["text"].tolist()
+    prewords = tokenizer.texts_to_sequences(text_arr)
+    words_ids = tf.keras.preprocessing.sequence.pad_sequences(
+                                                prewords,
+                                                maxlen=sequence_length)
+    premask = [[1 for i in arr] for arr in prewords]
+    masks = tf.keras.preprocessing.sequence.pad_sequences(
+                                                premask,
+                                                maxlen=sequence_length)
+    type_ids = np.zeros(words_ids.shape, dtype=np.int32)
+    inputs = {
+        "words_ids": words_ids,
+        "masks": masks,
+        "segment_ids": type_ids}
+    return inputs
+
+def predict_write(test_ds: Dict[str, np.array],
+                  idxs: np.array,
+                  model: tf.keras.Model,
+                  results_fn: str=default_results_fn,
+                  ):
+    y_pred = model.predict(test_ds).ravel()
+    results = pd.DataFrame({"id": idxs, "target": y_pred})
+    results.to_csv(results_fn, index=False)
+
 def main():
     df_train, y_train, id_train, df_test, id_test = load_data()
     stopwords = download_stopwords()
     df_train = prep(df_train, stopwords=stopwords)
-    if True:
+    if False:
         tokenizer, num_unique_words, words_ids, masks, type_ids = (
-                                bert_tokenize(df_train, "text"))
+                                bert_tokenize(df_train["text"].tolist()))
     else:
         tokenizer, num_unique_words, words_ids, masks, type_ids = (
-                                tf_tokenizer(df_train, "text"))
-    sequence_length = word_ids.shape[1]
+                                tf_tokenizer(df_train["text"].tolist()))
+    sequence_length = words_ids.shape[1]
     logger.info(f"Sequence length: {sequence_length}")
     logger.info(f"Vocab size: {num_unique_words}")
+    inputs = {
+        "words_ids": words_ids,
+        "masks": masks,
+        "segment_ids": type_ids}
+
+    """
     bert_layer = load_pretrained_bert()
     model = build_bert_model(bert_layer,
                              sequence_length=sequence_length,
@@ -412,13 +446,27 @@ def main():
                              units_0=100,
                              units_1=100,)
     """
+    model = build_conv_model(sequence_length=sequence_length,
+    				num_unique_words=num_unique_words,
+				embed_dim=200,
+				filters=5,
+				window=5,
+				pool_size=3,
+				units=100,
+				dense_0_dim=100,)
+    """
     x_train, x_valid = make_dataset(
-                                    [word_ids, masks, type_ids],
+                                    inputs,
                                     [y_train],)
     hist = model.fit(x_train,
                      epochs=8,
                      validation_data=x_valid,)
     model.summary()
+    x_test = transform_dataset(df_test,
+                      stopwords,
+                      tokenizer,
+                      sequence_length)
+    predict_write(x_test, id_test, model)
 
 if __name__=="__main__":
     main()
