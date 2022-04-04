@@ -9,9 +9,13 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple
-from tensorflow.keras.applications import DenseNet201
 import tensorflow_datasets as tfds
 
+TWO_FIVE_FIVE = tf.constant(
+        255.0,
+        shape=[],
+        dtype=tf.float32,
+        name="255")
 deg_to_rad = 2.0 * math.pi / 360.0
 
 @tf.function
@@ -20,7 +24,8 @@ def transform(x: tf.Tensor) -> tf.Tensor:
 
 @tf.function
 def get_random_rotation(th_std: tf.Tensor) -> tf.Tensor:
-    rot = tf.random.normal([1],
+    rot = tf.random.normal(
+            [1],
             mean=0.0,
             stddev=th_std * deg_to_rad,
             dtype=tf.float32)
@@ -37,7 +42,8 @@ def get_random_rotation(th_std: tf.Tensor) -> tf.Tensor:
 
 @tf.function
 def get_random_shear_height(yshr_std: tf.Tensor) -> tf.Tensor:
-    shr = tf.random.normal([1],
+    shr = tf.random.normal(
+            [1],
             mean=0.0,
             stddev=yshr_std,
             dtype=tf.float32)
@@ -52,7 +58,8 @@ def get_random_shear_height(yshr_std: tf.Tensor) -> tf.Tensor:
 
 @tf.function
 def get_random_shear_width(xshr_std: tf.Tensor) -> tf.Tensor:
-    shr = tf.random.normal([1],
+    shr = tf.random.normal(
+            [1],
             mean=0.0,
             stddev=xshr_std,
             dtype=tf.float32)
@@ -67,11 +74,13 @@ def get_random_shear_width(xshr_std: tf.Tensor) -> tf.Tensor:
 
 @tf.function
 def get_random_shift(yd_std: tf.Tensor, xd_std: tf.Tensor) -> tf.Tensor:
-    h_shift = tf.random.normal([1],
+    h_shift = tf.random.normal(
+            [1],
             mean=0.0,
             stddev=xd_std,
             dtype=tf.float32)
-    w_shift = tf.random.normal([1],
+    w_shift = tf.random.normal(
+            [1],
             mean=0.0,
             stddev=yd_std,
             dtype=tf.float32)
@@ -107,11 +116,11 @@ def get_random_scale(xscl_std: tf.Tensor, yscl_std: tf.Tensor) -> tf.Tensor:
 
 @tf.function
 def get_random_transformation(
-            th_std: tf.Tensor=tf.constant(10.0),
-            yshr_std: tf.Tensor=tf.constant(0.25),
-            xshr_std: tf.Tensor=tf.constant(0.25),
-            xd_std: tf.Tensor=tf.constant(10.0),
-            yd_std: tf.Tensor=tf.constant(10.0),
+            th_std: tf.Tensor=tf.constant(15.0),
+            yshr_std: tf.Tensor=tf.constant(0.2),
+            xshr_std: tf.Tensor=tf.constant(0.2),
+            xd_std: tf.Tensor=tf.constant(20.0),
+            yd_std: tf.Tensor=tf.constant(20.0),
             sclx0: tf.Tensor=tf.constant(0.2),
             scly0: tf.Tensor=tf.constant(0.2),
             ) -> tf.Tensor:
@@ -178,24 +187,30 @@ def get_strategy() -> Tuple[Optional["tpu"], Optional["strategy"]]:
 def read_tfrecord(example,
                   dim: int=192,
                   labeled: bool=True,
-                  on_tpu: bool=False):
+                  ):
     tfrec_format = {"image": tf.io.FixedLenFeature([], tf.string)}
-    if not on_tpu:
-        tfrec_format["id"] = tf.io.FixedLenFeature([], tf.string)
+    tfrec_format["id"] = tf.io.FixedLenFeature([], tf.string)
     if labeled:
         tfrec_format["class"] = tf.io.FixedLenFeature([], tf.int64)
     parsed = tf.io.parse_single_example(example, tfrec_format)
-    image = tf.reshape(
-                tf.cast(
-                    tf.image.decode_jpeg(parsed["image"], channels=3),
-                    tf.float32),
-                (dim, dim, 3))
+    image = cast_image_float(
+            tf.reshape(
+                tf.image.decode_jpeg(parsed["image"], channels=3),
+                (dim, dim, 3)))
     out = {"image": image}
-    if not on_tpu:
-        out["id"] = parsed["id"]
+    out["id"] = tf.io.decode_raw(parsed["id"],
+                                 out_type=tf.uint8,
+                                 fixed_length=9)
     if labeled:
         out["class"] = tf.cast(parsed["class"], tf.int64)
     return out
+
+@tf.function
+def cast_image_float(image: tf.Tensor) -> tf.Tensor:
+    image = tf.divide(
+                tf.cast(image, tf.float32),
+                TWO_FIVE_FIVE)
+    return image
 
 def get_dataset(dim: int,
                 repeat: Optional[int],
@@ -204,7 +219,6 @@ def get_dataset(dim: int,
                 train_test: str="train",
                 apply_transformation: bool=False,
                 top_dir: str=os.path.join(os.getcwd(), "data"),
-                on_tpu: bool=False,
                 ) -> tf.data.Dataset:
     if not os.path.exists(top_dir):
         from kaggle_datasets import KaggleDatasets
@@ -216,193 +230,119 @@ def get_dataset(dim: int,
     if train_test in ("train", "val"):
         read_f = lambda x: read_tfrecord(x,
                                          dim=dim,
-                                         labeled=True,
-                                         on_tpu=on_tpu)
+                                         labeled=True,)
     else:
         read_f = lambda x: read_tfrecord(x,
                                          dim=dim,
-                                         labeled=False,
-                                         on_tpu=on_tpu)
+                                         labeled=False,)
     ds = tf.data.TFRecordDataset(tf_recs).map(read_f)
     if repeat is not None:
         ds = ds.repeat(repeat)
-    if buffer_size is not None:
-        ds = ds.shuffle(buffer_size=buffer_size)
     if train_test in ("train", "val"):
-        if on_tpu:
-            if apply_transformation:
-                xds = ds.map(lambda x: {"image": transform(x["image"])})
-            else:
-                xds = ds.map(lambda x: {"image": x["image"]})
+        if apply_transformation:
+            xds = ds.map(lambda x: {
+                "image": transform(x["image"]),
+                "id": x["id"]})
         else:
-            if apply_transformation:
-                xds = xds.map(lambda x: {"image": transform(x["image"]),
-                                         "id": x["id"]})
-            else:
-                xds = ds.map(lambda x: {"image": x["image"],
-                                        "id": x["id"]})
+            xds = ds.map(lambda x: {
+                "image": x["image"],
+                    "id": x["id"]})
         yds = ds.map(lambda x: {"class": x["class"]})
         ds = tf.data.Dataset.zip((xds, yds))
+    if buffer_size is not None:
+        ds = ds.shuffle(buffer_size=buffer_size)
     if batch_size is not None:
+        drop_remainder = True if train_test != "test" else False
         ds = ds.batch(batch_size, drop_remainder=True)
+        ds = ds.prefetch(buffer_size=batch_size)
     return ds
 
-def get_model_preprocessing_layers(
-            strategy: "strategy",
-            imagey: int,
-            imagex: int,
-            classes: int,
-            seed: int=50,
-            on_tpu: bool=False,
-            ) -> tf.keras.Model:
-    """
-    Default version of TensorFlow
-    on Kaggle does not have
-    image preprocessing layers.
-    """
-    with strategy.scope():
-        tf.random.set_seed(seed)
-        one = tf.constant([1], dtype=tf.int32)
-        dimx = tf.constant(imagex, dtype=tf.int32)
-        dimy = tf.constant(imagey, dtype=tf.int32)
-        dx_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.15,
-                    dtype=tf.float32))
-        dy_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.15,
-                    dtype=tf.float32))
-        rot_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.15,
-                    dtype=tf.float32))
-        shear_y_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.10,
-                    dtype=tf.float32))
-        shear_x_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.10,
-                    dtype=tf.float32))
-        zoom_0 = tf.math.abs(tf.random.normal(one,
-                    mean=0.0,
-                    stddev=0.15,
-                    dtype=tf.float32))
-        random_translation_layer = tf.keras.layers.RandomTranslation(
-                    dx_0,
-                    dy_0,
-                    name="random_translation")
-        random_flip_layer = tf.keras.layers.RandomFlip(
-                    name="random_flip")
-        random_rotation_layer = tf.keras.layers.RandomRotation(
-                    rot_0,
-                    name="random_rotation")
-        random_shear_height = tf.keras.layers.RandomHeight(
-                    factor=shear_y_0,
-                    name="random_shear_height")
-        random_shear_width = tf.keras.layers.RandomWidth(
-                    factor=shear_x_0,
-                    name="random_shear_width")
-        random_zoom_layer = tf.keras.layers.RandomZoom(
-                    height_factor=zoom_0,
-                    width_factor=zoom_0,
-                    name="random_zoom")
-        center_crop_layer = tf.keras.layers.CenterCrop(
-                    height=imagey,
-                    width=imagex,
-                    name="center_crop")
-        rnet = DenseNet201(
-                    input_shape=(imagey, imagex, 3),
-                    weights="imagenet",
-                    include_top=False,)
-        input1 = tf.keras.Input(
-                    shape=(imagey, imagex, 3),
-                    dtype=tf.float32)
-        inputs = {"image": input1}
-        if not on_tpu:
-            input2 = tf.keras.Input(shape=(), dtype=tf.string)
-            inputs["id"] = input2
-        pooling = tf.keras.layers.GlobalAveragePooling2D(
+class FlowerModel(tf.keras.Model):
+    def __init__(self,
+                 image_shape: Tuple[int, int],
+                 classes: int,
+                 **kwargs
+                 ):
+        super().__init__(**kwargs)
+        imagey, imagex, _ = image_shape
+        #from tensorflow.keras.applications import DenseNet201
+        from tensorflow.keras.applications import Xception
+        #self.rnet = DenseNet201(
+        #        input_shape=(imagey, imagex, 3),
+        #        weights="imagenet",
+        #        include_top=False,)
+        self.rnet = Xception(
+                input_shape=(imagey, imagex, 3),
+                weights="imagenet",
+                include_top=False,)
+        self.rnet.trainable = False
+        self.pooling = tf.keras.layers.GlobalAveragePooling2D(
                 name="pooling")
-        out_layer = tf.keras.layers.Dense(
+        self.flat = tf.keras.layers.Flatten(
+                name="flatten_pooling")
+        self.dense_hidden = tf.keras.layers.Dense(
+                units=4000,
+                activation="relu",
+                name="dense_hidden")
+        self.dropout = tf.keras.layers.Dropout(
+                0.25,
+                name="dropout_layer")
+        self.out_layer = tf.keras.layers.Dense(
                 classes,
                 activation="softmax",
-                dtype=tf.float32)
-        x = input1
-        x = random_translation_layer(x)
-        x = random_flip_layer(x)
-        x = random_rotation_layer(x)
-        #x = random_shear_height(x)
-        #x = center_crop_layer(x)
-        #x = random_shear_width(x)
-        #x = center_crop_layer(x)
-        x = random_zoom_layer(x)
-        x = center_crop_layer(x)
-        x = rnet(x)
-        x = pooling(x)
-        x = out_layer(x)
-        label = tf.reshape(tf.math.top_k(x, k=1).indices, shape=[-1])
-        outputs = {"class": x, "label": label}
-        if not on_tpu:
-            outputs["id"] = input2
-        model = tf.keras.Model(
-                inputs=inputs,
-                outputs=outputs,
-                name="flower_model")
+                dtype=tf.float32,
+                name="flower_class")
         loss = tf.keras.losses.SparseCategoricalCrossentropy()
         metric = tf.keras.metrics.SparseCategoricalAccuracy()
-        opt = tf.keras.optimizers.Adam()
-    model.compile(
-            optimizer=opt,
-            loss={"class": loss},
-            metrics={"class": [metric]})
-    return model
+        opt = tf.keras.optimizers.Adam(
+                learning_rate=1e-3)
+        self.compile(
+                optimizer=opt,
+                loss={"class": loss,
+                      "label": None,
+                      "id": None},
+                metrics={"class": [metric]})
 
-def get_model(strategy: "strategy",
+    def set_trainable_recompile(self):
+        self.rnet.trainable = True
+        loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        metric = tf.keras.metrics.SparseCategoricalAccuracy()
+        opt = tf.keras.optimizers.Adam(
+                learning_rate=1e-5)
+        self.compile(
+                optimizer=opt,
+                loss={"class": loss,
+                      "label": None,
+                      "id": None},
+                metrics={"class": [metric]})
+
+    def call(self, inputs):
+        x = inputs["image"]
+        x = self.rnet(x)
+        x = self.pooling(x)
+        x = self.flat(x)
+        x = self.dense_hidden(x)
+        x = self.dropout(x)
+        x = self.out_layer(x)
+        label = tf.reshape(
+                tf.math.top_k(x, k=1).indices,
+                shape=[-1])
+        outputs = {"class": x,
+                   "label": label,
+                   "id": inputs["id"]}
+        return outputs
+
+def get_model(
               imagey: int,
               imagex: int,
               classes: int,
               seed: int=50,
-              on_tpu: bool=False) -> tf.keras.Model:
-    with strategy.scope():
-        tf.random.set_seed(seed)
-        rnet = DenseNet201(
-                input_shape=(imagey, imagex, 3),
-                weights="imagenet",
-                include_top=False,)
-        input1 = tf.keras.Input(
-                shape=(imagey, imagex, 3),
-                dtype=tf.float32)
-        inputs = {"image": input1}
-        if not on_tpu:
-            input2 = tf.keras.Input(shape=(), dtype=tf.string)
-            inputs["id"] = input2
-        pooling = tf.keras.layers.GlobalAveragePooling2D(
-                name="pooling")
-        out_layer = tf.keras.layers.Dense(
-                classes,
-                activation="softmax",
-                dtype=tf.float32)
-        x = input1
-        x = rnet(x)
-        x = pooling(x)
-        x = out_layer(x)
-        label = tf.reshape(tf.math.top_k(x, k=1).indices, shape=[-1])
-        outputs = {"class": x, "label": label}
-        if not on_tpu:
-            outputs["id"] = input2
-        model = tf.keras.Model(
-                inputs=inputs,
-                outputs=outputs,
-                name="flower_model")
-        loss = tf.keras.losses.SparseCategoricalCrossentropy()
-        metric = tf.keras.metrics.SparseCategoricalAccuracy()
-        opt = tf.keras.optimizers.Adam()
-    model.compile(
-            optimizer=opt,
-            loss={"class": loss},
-            metrics={"class": [metric]})
+              ) -> tf.keras.Model:
+    tf.random.set_seed(seed)
+    model = FlowerModel(
+             image_shape=(imagey, imagex, 3),
+             classes=classes,
+            name="flower_model")
     return model
 
 def test_image_transform() -> None:
@@ -414,15 +354,14 @@ def test_image_transform() -> None:
                     buffer_size=None,
                     batch_size=None,
                     apply_transformation=False,
-                    train_test="train",
-                    on_tpu=False)
+                    train_test="train",)
     ds = ds.map(lambda x, y: x)
     ds = ds.map(lambda x: x["image"])
     ds = ds.skip(100).take(1).repeat(2)
     ds = tfds.as_numpy(ds)
     it = iter(ds)
-    ds0 = next(it).astype(int)
-    ds1 = transform(next(it).astype(int))
+    ds0 = next(it)
+    ds1 = transform(next(it))
     fix, ax = plt.subplots(1, 2)
     ax[0].imshow(ds0)
     ax[1].imshow(ds1)
@@ -434,6 +373,9 @@ def main(
         epochs_tune: int=5,
         repeat: int=3,
         buffer_size: int=10):
+    # It's important to recompile your model after you make any changes
+    # to the `trainable` attribute of any inner layer, so that your changes
+    # are take into account
     print(f"TF version: {tf.__version__}")
     classes = 104
     tpu, strategy = get_strategy()
@@ -441,67 +383,62 @@ def main(
     print(f"TPU: {tpu}")
     print(f"Strategy: {strategy}")
     dims = [192, 224, 331, 512]
-    dim = dims[0]
+    dim = dims[1]
     print(f"Image dimension: {dim}")
     print(f"Epochs initial: {epochs_init}")
     print(f"Epochs tuning: {epochs_tune}")
-    ds_train = get_dataset(dim,
+    batch_size = batch_size * strategy.num_replicas_in_sync
+    with strategy.scope():
+        ds_train = get_dataset(dim,
                     repeat=repeat,
                     buffer_size=buffer_size,
                     batch_size=batch_size,
                     apply_transformation=True,
-                    train_test="train",
-                    on_tpu=on_tpu)
-    ds_valid = get_dataset(
+                    train_test="train",)
+        ds_valid = get_dataset(
                     dim,
                     repeat=None,
                     buffer_size=None,
                     batch_size=batch_size,
                     apply_transformation=False,
-                    train_test="val",
-                    on_tpu=on_tpu)
-    model = get_model(strategy=strategy,
+                    train_test="val",)
+        model = get_model(
                     imagey=dim,
                     imagex=dim,
-                    classes=classes,
-                    on_tpu=on_tpu)
-    print("Initial training: DenseNet not trainable")
-    model.get_layer("densenet201").trainable = False
-    hist0 = model.fit(ds_train,
+                    classes=classes,)
+        print("Initial training: DenseNet not trainable")
+        hist0 = model.fit(ds_train,
                     validation_data=ds_valid,
                     epochs=epochs_init)
-    print("Fine-tuning training: DenseNet trainable")
-    model.get_layer("densenet201").trainable = True
-    hist1 = model.fit(ds_train,
+        print("Fine-tuning training: DenseNet trainable")
+        model.set_trainable_recompile()
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=2)
+        hist1 = model.fit(ds_train,
                     validation_data=ds_valid,
-                    epochs=epochs_tune)
+                    epochs=epochs_tune,
+                    callbacks=[early_stopping])
     ds_test = get_dataset(
                     dim,
                     repeat=None,
                     buffer_size=None,
-                    batch_size=None,
+                    batch_size=64,
                     apply_transformation=False,
-                    train_test="test",
-                    on_tpu=False)
-    if on_tpu:
-        ids = tfds.as_numpy(ds_test.map(lambda x: {"id": x["id"]}))
-        ids = np.array([x["id"] for x in ids])
-        ds_test = ds_test.map(lambda x: {"image": x["image"]})
-        prediction = model.predict(ds_test.batch(64))
-        prediction.pop("class")
-        prediction = pd.DataFrame(prediction)
-        prediction["id"] = ids
-    else:
-        prediction = model.predict(ds_test.batch(64))
-        prediction.pop("class")
-        prediction = pd.DataFrame(prediction)
+                    train_test="test",)
+    prediction = model.predict(ds_test)
+    prediction.pop("class")
+    ids = np.array(["".join([chr(x) for x in pred])
+                    for pred in prediction["id"]])
+    prediction["id"] = ids
+    prediction = pd.DataFrame(prediction)
     return model, (hist0, hist1), prediction
 
 if __name__=="__main__":
     #test_image_transform()
-    model, history, prediction = ds_test = main(
-            batch_size=256,
-            epochs_init=3,
+    model, history, prediction = main(
+            batch_size=64,
+            epochs_init=2,
             epochs_tune=5,
             repeat=3,
             buffer_size=10)
