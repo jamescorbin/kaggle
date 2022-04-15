@@ -47,24 +47,24 @@ def make_tf_dataset(x_train: np.array,
     return ds_train, ds_valid
 
 def build_model(conv2d_dim: int,
-                conv2d_kernel_size: Tuple[int, int]=(_height, _width),
-                pool_size: Tuple[int, int]=(_height, _width),
-                dense0_dim: int=40,
-                dense1_dim: int=10,
-                ) -> tf.keras.Model:
+            conv2d_kernel_size: Tuple[int, int]=(_height, _width),
+            pool_size: Tuple[int, int]=(_height, _width),
+            dense0_dim: int=40,
+            dense1_dim: int=10,
+            ) -> tf.keras.Model:
     img_inputs = tf.keras.Input(shape=(_height, _width, 1))
-    conv2d_layer = tf.keras.layers.Conv2D(filters=conv2d_dim,
-                                   kernel_size=conv2d_kernel_size,
-                                   activation="relu",
-                                   use_bias=True,)
+    conv2d_layer = tf.keras.layers.Conv2D(
+            filters=conv2d_dim,
+            kernel_size=conv2d_kernel_size,
+            activation="relu",
+            use_bias=True,)
     pool2d_layer = tf.keras.layers.AveragePooling2D(
-                                    pool_size=pool_size,)
+            pool_size=pool_size,)
     flat_layer = tf.keras.layers.Flatten()
     dense0_layer = tf.keras.layers.Dense(dense0_dim,
-                                         activation="relu")
+            activation="relu")
     dense1_layer = tf.keras.layers.Dense(dense1_dim,
-                                         activation="sigmoid")
-    #loss = tf.keras.losses.CategoricalCrossentropy()
+            activation="sigmoid")
     loss = tf.keras.losses.SparseCategoricalCrossentropy()
     opt = tf.keras.optimizers.RMSprop()
     x = conv2d_layer(img_inputs)
@@ -72,13 +72,14 @@ def build_model(conv2d_dim: int,
     x = flat_layer(x)
     x = dense0_layer(x)
     x = dense1_layer(x)
-    model = tf.keras.Model(inputs=[img_inputs],
-                           outputs=[x],
-                           name="digit_model")
+    model = tf.keras.Model(
+            inputs=[img_inputs],
+            outputs=[x],
+            name="digit_model")
     model.compile(
-        loss=loss,
-        optimizer=opt,
-        metrics=["accuracy"],)
+            loss=loss,
+            optimizer=opt,
+            metrics=["accuracy"],)
     return model
 
 def train_model(model: tf.keras.Model,
