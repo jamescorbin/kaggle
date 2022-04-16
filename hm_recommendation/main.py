@@ -13,7 +13,6 @@ import serialize
 import rawdata
 import model
 
-
 def run_serialization(
         articles_fn: str,
         customers_fn: str,

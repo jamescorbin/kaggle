@@ -1,9 +1,12 @@
 import sys
 import os
+import logging
 from typing import Dict
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(name=__name__)
 
 def _byteslist(value):
     return tf.train.Feature(
@@ -112,11 +115,90 @@ def parse(example, ts_len: int=5):
 
 def write_chunk(
             transactions_ds: pd.DataFrame,
+            articles_ds: pd.DataFrame, tfrec_fn: str, tfrec_dir: str="tfrec",
+            ts_len: int=5,
+            low_memory: bool=True):
+    if not low_memory:
+        _write_chunk_high_memory(
+                transactions_ds,
+                articles_ds,
+                tfrec_fn,
+                tfrec_dir,
+                ts_len=ts_len)
+    else:
+        _write_chunk_low_memory(
+                transactions_ds,
+                articles_ds,
+                tfrec_fn,
+                tfrec_dir,
+                ts_len=ts_len)
+
+def  _write_chunk_low_memory(
+            transactions_ds: pd.DataFrame,
             articles_ds: pd.DataFrame,
             tfrec_fn: str,
             tfrec_dir: str="tfrec",
-            ts_len: int=5):
-    dataset = []
+            ts_len: int=5,):
+    article_columns = [
+            "product_code",
+            "prod_name",
+            "product_type_no",
+            "product_type_name",
+            "product_group_name",
+            "graphical_appearance_no",
+            "graphical_appearance_name",
+            "colour_group_code",
+            "colour_group_name",
+            "perceived_colour_value_id",
+            "perceived_colour_value_name",
+            "perceived_colour_master_id",
+            "perceived_colour_master_name",
+            "department_no",
+            "department_name",
+            "index_code",
+            "index_name",
+            "index_group_no",
+            "index_group_name",
+            "section_no",
+            "section_name",
+            "garment_group_no",
+            "garment_group_name",
+            "detail_desc"]
+    out_fp = os.path.join(tfrec_dir, tfrec_fn)
+    with tf.io.TFRecordWriter(out_fp) as writer:
+        for i, row in transactions_ds.iterrows():
+            data = {}
+            data["article_id"] = [
+                    row[f"article_id_{n}"]
+                    for n in range(ts_len, 0, -1)]
+            article_data = articles_ds.loc[data["article_id"]]
+            for col in article_columns:
+                data[col] = article_data[col].values.tolist()
+            data["t_dat"] = [row["t_dat"]]
+            data["price"] = (
+                    [row[f"price_{n}"]
+                    for n in range(ts_len, 0, -1)]
+                    + [row[f"price_{n}_mask"]
+                    for n in range(ts_len, 0, -1)])
+            data["sales_channel_id"] = [row[f"sales_channel_id_{n}"]
+                    for n in range(ts_len, 0, -1)]
+            data["target"] = [row["target"]]
+            data["target_article_id"] = [row["article_id"]]
+            cust_idx = row["customer_id"]
+            data["customer_id"] = [cust_idx]
+            data["FN"] = [row["FN"], row["fn_mask"]]
+            data["Active"] = [row["Active"], row["active_mask"]]
+            data["club_member_status"] = [row["club_member_status"]]
+            data["fashion_news_frequency"] = [row["fashion_news_frequency"]]
+            data["age"] = [row["age"], row["age_mask"]]
+            writer.write(serialize_example(data))
+
+def _write_chunk_high_memory(
+            transactions_ds: pd.DataFrame,
+            articles_ds: pd.DataFrame,
+            tfrec_fn: str,
+            tfrec_dir: str="tfrec",
+        ts_len: int=5,):
     article_columns = [
             "product_code",
             "prod_name",
@@ -198,7 +280,7 @@ def write_dataset(
             how="left")
     for i in range(shards):
         idx = range(i * filesize, (i + 1) * filesize)
-        chunk = pd.DataFrame(transactions_ds.iloc[idx])
+        chunk = transactions_ds.iloc[idx]
         write_chunk(
                 chunk,
                 articles_ds,
