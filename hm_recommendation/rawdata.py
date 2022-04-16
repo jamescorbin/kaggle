@@ -1,7 +1,9 @@
 import sys
 import os
+import logging
 import pandas as pd
 
+logger = logging.getLogger(name=__name__)
 unk = "[unk]"
 
 default_articles_fn = os.path.abspath(os.path.join(
@@ -42,6 +44,7 @@ def get_unknown_article():
             "detail_desc": unk.encode("utf-8")}
 
 def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
+    logger.info(f"Opening articles dataset")
     articles_bytes_cols = [
             "article_id",
             "product_type_name",
@@ -71,6 +74,7 @@ def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
     return articles_ds
 
 def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
+    logger.info(f"Opening customers dataset")
     customers_bytes_cols = [
             "customer_id",
             "club_member_status",
@@ -135,8 +139,10 @@ def append_previous_purchases(
     return transaction_ds
 
 def load_transactions_ds(
-        transactions_fn: str=default_transact_fn) -> pd.DataFrame:
-    transactions_ds = pd.read_csv(transactions_fn)
+        transactions_fn: str=default_transact_fn,
+        ) -> pd.DataFrame:
+    logger.info(f"Opening transactions dataset")
+    transactions_ds = pd.read_csv(transactions_fn, nrows=2000000)
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{x:010d}")
@@ -148,7 +154,6 @@ def load_transactions_ds(
             transactions_ds["sales_channel_id"]
                 .apply(lambda x: str(x).encode("utf-8")))
     transactions_ds = append_previous_purchases(transactions_ds)
-    print("columns", transactions_ds.columns)
     return transactions_ds
 
 def write_vocabulary(
@@ -179,8 +184,7 @@ def write_vocabulary(
     fashion_news_voc = (customers_ds["fashion_news_frequency"]
             .unique().tolist())
     pairs = [
-        (article_ids, "article_ids.txt"),
-        (garment_voc, "garments.txt"),
+        (article_ids, "article_ids.txt"), (garment_voc, "garments.txt"),
         (section_voc, "sections.txt"),
         (index_voc, "index_names.txt"),
         (index_group_voc, "index_groups.txt"),

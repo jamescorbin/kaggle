@@ -1,8 +1,10 @@
 """
-kaggle competitions downloads -c h-and-m-personalized-fashion-recommendations
+To pull dataset:
+    kaggle competitions downloads -c h-and-m-personalized-fashion-recommendations
 """
 import sys
 import os
+import logging
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -12,6 +14,18 @@ sys.path.insert(1, pt)
 import serialize
 import rawdata
 import model
+
+frmt = ("[%(asctime)s] %(levelname)s "
+        "[%(name)s.%(funcName)s:%(lineno)d] "
+        "%(message)s")
+formatter = logging.Formatter(fmt=frmt)
+stdout = logging.StreamHandler(stream=sys.stdout)
+stdout.setFormatter(formatter)
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[stdout],)
+logger = logging.getLogger(name=__name__)
+
 
 def run_serialization(
         articles_fn: str,
@@ -32,13 +46,19 @@ def run_serialization(
         for i, x in enumerate(vocabulary["article_ids"])}
     transactions_ds["target"] = (transactions_ds["article_id"]
                                  .apply(lambda x: article_ids_map[x]))
+    logger.info("Serializing dataset")
     serialize.write_dataset(
             transactions_ds,
             articles_ds,
             customers_ds)
 
-
 if __name__=="__main__":
+    run_serialization(
+            "./data/articles.csv",
+            "./data/customers.csv",
+            "./data/transactions_train.csv",
+            "tfrec",
+            "vocabulary")
     filenames = [os.path.join("tfrec", x) for x in os.listdir("tfrec")]
     dataset = tf.data.TFRecordDataset(filenames)
     dataset = dataset.map(serialize.parse)
