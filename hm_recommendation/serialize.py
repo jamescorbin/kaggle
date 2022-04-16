@@ -8,10 +8,39 @@ import numpy as np
 
 logger = logging.getLogger(name=__name__)
 
+def _run_serialization(
+        articles_fn: str,
+        customers_fn: str,
+        transactions_fn: str,
+        tfrec_dir: str,
+        vocab_dir: str,
+        ) -> None:
+    transactions_ds = rawdata.load_transactions_ds(transactions_fn)
+    customers_ds = rawdata.load_customers_ds(customers_fn)
+    articles_ds = rawdata.load_articles_ds(articles_fn)
+    rawdata.write_vocabulary(articles_ds,
+            customers_ds,
+            parent_dir=vocab_dir)
+    vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
+    articles_ds, customers_ds = rawdata.vectorize_features(
+                articles_ds,
+                customers_ds,
+                vocabulary)
+    article_ids_map = {
+            x: i for i, x in enumerate(vocabulary["article_id"])}
+    transactions_ds["target"] = (
+            transactions_ds["article_id"].apply(lambda x: article_ids_map[x]))
+    logger.info("Serializing dataset")
+    serialize.write_dataset(
+            transactions_ds,
+            articles_ds,
+            customers_ds)
+
 def _byteslist(value):
     return tf.train.Feature(
             bytes_list=tf.train.BytesList(value=value))
-def _int64list(value): return tf.train.Feature(
+def _int64list(value):
+    return tf.train.Feature(
             int64_list=tf.train.Int64List(value=value))
 def _floatlist(value):
     return tf.train.Feature(
@@ -19,44 +48,44 @@ def _floatlist(value):
 
 def serialize_example(ds: Dict[str, np.array]):
     feature = {
-        "t_dat": _byteslist(ds["t_dat"]),
-        "customer_id": _byteslist(ds["customer_id"]),
-        "fn": _floatlist(ds["FN"]),
-        "active": _floatlist(ds["Active"]),
+        #"t_dat": _byteslist(ds["t_dat"]),
+        #"customer_id": _byteslist(ds["customer_id"]),
+        #"fn": _floatlist(ds["FN"]),
+        #"active": _floatlist(ds["Active"]),
         "age": _floatlist(ds["age"]),
         "price": _floatlist(ds["price"]),
         "club_member_status":
-                _byteslist(ds["club_member_status"]),
+                _int64list(ds["club_member_status"]),
         "fashion_news_frequency":
-                _byteslist(ds["fashion_news_frequency"]),
+                _int64list(ds["fashion_news_frequency"]),
         "sales_channel_id": _byteslist(ds["sales_channel_id"]),
-        "article_id": _byteslist(ds["article_id"]),
+        #"article_id": _byteslist(ds["article_id"]),
         "product_type_name":
-                _byteslist(ds["product_type_name"]),
-        "product_group_name":
-                _byteslist(ds["product_group_name"]),
+                _int64list(ds["product_type_name"]),
+        #"product_group_name":
+        #        _byteslist(ds["product_group_name"]),
         "graphical_appearance_name":
-                _byteslist(ds["graphical_appearance_name"]),
+                _int64list(ds["graphical_appearance_name"]),
         "colour_group_name":
-                _byteslist(ds["colour_group_name"]),
-        "perceived_colour_value_name":
-                _byteslist(ds["perceived_colour_value_name"]),
+                _int64list(ds["colour_group_name"]),
+        #"perceived_colour_value_name":
+        #        _byteslist(ds["perceived_colour_value_name"]),
         "perceived_colour_master_name":
-                _byteslist(ds["perceived_colour_master_name"]),
-        "department_name":
-                _byteslist(ds["department_name"]),
-        "index_name":
-                _byteslist(ds["index_name"]),
-        "index_group_name":
-                _byteslist(ds["index_group_name"]),
+                _int64list(ds["perceived_colour_master_name"]),
+        #"department_name":
+        #        _byteslist(ds["department_name"]),
+        #"index_name":
+        #        _byteslist(ds["index_name"]),
+        #"index_group_name":
+        #        _byteslist(ds["index_group_name"]),
         "section_name":
-                _byteslist(ds["section_name"]),
-        "garment_group_name":
-                _byteslist(ds["garment_group_name"]),
+                _int64list(ds["section_name"]),
+        #"garment_group_name":
+        #        _byteslist(ds["garment_group_name"]),
         #"detail_desc":
         #        _byteslist(ds["detail_desc"]),
-        "target_article_id":
-                _byteslist(ds["target_article_id"]),
+        #"target_article_id":
+        #        _byteslist(ds["target_article_id"]),
         "target": _int64list(ds["target"]),}
     example_proto = tf.train.Example(
             features=tf.train.Features(feature=feature))
@@ -71,51 +100,53 @@ def tf_serialize_example(ds):
 
 def parse(example, ts_len: int=5):
     feature_description = {
-        "t_dat": tf.io.FixedLenFeature([1], tf.string),
-        "customer_id": tf.io.FixedLenFeature([1], tf.string),
-        "fn": tf.io.FixedLenFeature([2], tf.float32),
-        "active": tf.io.FixedLenFeature([2], tf.float32),
-        "age": tf.io.FixedLenFeature([2], tf.float32),
+        #"t_dat": tf.io.FixedLenFeature([1], tf.string),
+        #"customer_id": tf.io.FixedLenFeature([1], tf.string),
+        #"fn": tf.io.FixedLenFeature([2], tf.float32),
+        #"active": tf.io.FixedLenFeature([2], tf.float32),
         "price": tf.io.FixedLenFeature([2 * ts_len], tf.float32),
+        "age": tf.io.FixedLenFeature([2], tf.float32),
         "club_member_status":
-                tf.io.FixedLenFeature([1], tf.string),
+                tf.io.FixedLenFeature([1], tf.int64),
         "fashion_news_frequency":
-                tf.io.FixedLenFeature([1], tf.string),
+                tf.io.FixedLenFeature([1], tf.int64),
         "sales_channel_id":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "article_id":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
+        #"article_id":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
         "product_type_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "product_group_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
+        #"product_group_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
         "graphical_appearance_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
         "colour_group_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "perceived_colour_value_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
+        #"perceived_colour_value_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
         "perceived_colour_master_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "department_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "index_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "index_group_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
+        #"department_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
+        #"index_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
+        #"index_group_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
         "section_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
-        "garment_group_name":
-                tf.io.FixedLenFeature([ts_len], tf.string),
+                tf.io.FixedLenFeature([ts_len], tf.int64),
+        #"garment_group_name":
+        #        tf.io.FixedLenFeature([ts_len], tf.string),
         #"detail_desc": tf.io.FixedLenFeature([ts_len], tf.string),
-        "target_article_id":
-                tf.io.FixedLenFeature([1], tf.string),
+        #"target_article_id":
+        #        tf.io.FixedLenFeature([1], tf.string),
         "target": tf.io.FixedLenFeature([1], tf.int64),}
     return tf.io.parse_single_example(example, feature_description)
 
 def write_chunk(
             transactions_ds: pd.DataFrame,
-            articles_ds: pd.DataFrame, tfrec_fn: str, tfrec_dir: str="tfrec",
+            articles_ds: pd.DataFrame,
+            tfrec_fn: str,
+            tfrec_dir: str="tfrec",
             ts_len: int=5,
             low_memory: bool=True):
     if low_memory:
@@ -289,4 +320,3 @@ def write_dataset(
                 tfrec_dir=tfrec_dir,
                 ts_len=ts_len,
                 tfrec_fn=f"{i:03d}.tfrec")
-

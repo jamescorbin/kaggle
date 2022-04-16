@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+from typing import Dict, List, Tuple
 import pandas as pd
 
 logger = logging.getLogger(name=__name__)
@@ -142,7 +143,7 @@ def load_transactions_ds(
         transactions_fn: str=default_transact_fn,
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
-    transactions_ds = pd.read_csv(transactions_fn)#, nrows=2000000)
+    transactions_ds = pd.read_csv(transactions_fn, nrows=1000000)
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{x:010d}")
@@ -224,23 +225,54 @@ def load_vocabulary(
         "club_member_voc": [],
         "fashion_news_voc": [],}
     pairs = [
-        ("article_ids", "article_ids.txt"),
-        ("garment_voc", "garments.txt"),
-        ("section_voc", "sections.txt"),
-        ("index_voc", "index_names.txt"),
-        ("index_group_voc", "index_groups.txt"),
-        ("department_voc", "departments.txt"),
-        ("colour_value_voc", "colour_value_names.txt"),
-        ("colour_master_voc", "colour_master_names.txt"),
-        ("colour_group_voc", "colour_group_names.txt"),
-        ("graphical_appearance_voc", "graphical_appearance_names.txt"),
-        ("product_group_voc", "product_group_names.txt"),
-        ("product_type_voc", "product_type_names.txt"),
-        ("club_member_voc", "club_member_statuses.txt"),
-        ("fashion_news_voc", "fashion_news.txt"),
-    ]
+        ("article_id", "article_ids.txt"),
+        ("garment_group_name", "garments.txt"),
+        ("section_name", "sections.txt"),
+        ("index_name", "index_names.txt"),
+        ("index_group_name", "index_groups.txt"),
+        ("department_name", "departments.txt"),
+        ("perceived_colour_value_name", "colour_value_names.txt"),
+        ("perceived_colour_master_name", "colour_master_names.txt"),
+        ("colour_group_name", "colour_group_names.txt"),
+        ("graphical_appearance_name", "graphical_appearance_names.txt"),
+        ("product_group_name", "product_group_names.txt"),
+        ("product_type_name", "product_type_names.txt"),
+        ("club_member_status", "club_member_statuses.txt"),
+        ("fashion_news_frequency", "fashion_news.txt"),]
     for lst, bn in pairs:
         fn = os.path.join(parent_dir, bn)
         with open(fn, "r") as f:
             vocabularies[lst] = [w.strip().encode("utf-8") for w in f]
     return vocabularies
+
+def vectorize_features(
+        articles_ds: pd.DataFrame,
+        customers_ds: pd.DataFrame,
+        vocabulary: Dict[str, List[str]],
+        ) -> Tuple[pd.DataFrame]:
+    cols = ["garment_group_name",
+            "section_name",
+            "index_name",
+            "index_group_name",
+            "department_name",
+            "perceived_colour_value_name",
+            "perceived_colour_master_name",
+            "colour_group_name",
+            "graphical_appearance_name",
+            "product_group_name",
+            "product_type_name",]
+    for col in cols:
+        dct = {x: i for i, x in enumerate(vocabulary[col])}
+        articles_ds[col] = (
+            articles_ds[col]
+            .apply(lambda x: dct[x]))
+    cols = ["club_member_status",
+            "fashion_news_frequency"]
+    for col in cols:
+        dct = {x: i for i, x in enumerate(vocabulary[col])}
+        customers_ds[col] = (
+            customers_ds[col]
+            .apply(lambda x: dct[x]))
+    return articles_ds, customers_ds
+
+
