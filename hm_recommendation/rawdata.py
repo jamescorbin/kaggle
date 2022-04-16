@@ -244,4 +244,3 @@ def load_vocabulary(
         with open(fn, "r") as f:
             vocabularies[lst] = [w.strip().encode("utf-8") for w in f]
     return vocabularies
-

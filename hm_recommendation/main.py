@@ -26,7 +26,6 @@ logging.basicConfig(
     handlers=[stdout],)
 logger = logging.getLogger(name=__name__)
 
-
 def run_serialization(
         articles_fn: str,
         customers_fn: str,
