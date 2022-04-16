@@ -118,15 +118,15 @@ def write_chunk(
             articles_ds: pd.DataFrame, tfrec_fn: str, tfrec_dir: str="tfrec",
             ts_len: int=5,
             low_memory: bool=True):
-    if not low_memory:
-        _write_chunk_high_memory(
+    if low_memory:
+        _write_chunk_low_memory(
                 transactions_ds,
                 articles_ds,
                 tfrec_fn,
                 tfrec_dir,
                 ts_len=ts_len)
     else:
-        _write_chunk_low_memory(
+        _write_chunk_high_memory(
                 transactions_ds,
                 articles_ds,
                 tfrec_fn,
@@ -165,6 +165,7 @@ def  _write_chunk_low_memory(
             "garment_group_name",
             "detail_desc"]
     out_fp = os.path.join(tfrec_dir, tfrec_fn)
+    logger.info(f"Writing {out_fp}")
     with tf.io.TFRecordWriter(out_fp) as writer:
         for i, row in transactions_ds.iterrows():
             data = {}
@@ -236,6 +237,7 @@ def _write_chunk_high_memory(
                 axis=1,
                 inplace=True)
     out_fp = os.path.join(tfrec_dir, tfrec_fn)
+    logger.info(f"Writing {out_fp}")
     with tf.io.TFRecordWriter(out_fp) as writer:
         for i, row in transactions_ds.iterrows():
             data = {}
