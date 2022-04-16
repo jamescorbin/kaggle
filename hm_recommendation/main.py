@@ -33,7 +33,6 @@ def run_serialization(
         for i, x in enumerate(vocabulary["article_ids"])}
     transactions_ds["target"] = (transactions_ds["article_id"]
                                  .apply(lambda x: article_ids_map[x]))
-    print(article_ids_map)
     serialize.write_dataset(
             transactions_ds,
             articles_ds,
@@ -49,4 +48,3 @@ if __name__=="__main__":
     dataset = tf.data.Dataset.zip((dataset, y_ds))
     dataset = dataset.batch(64, drop_remainder=True)
     model.fit(dataset, epochs=2)
-

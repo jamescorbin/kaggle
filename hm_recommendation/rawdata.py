@@ -42,7 +42,7 @@ def get_unknown_article():
             "detail_desc": unk.encode("utf-8")}
 
 def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
-   articles_bytes_cols = [
+    articles_bytes_cols = [
             "article_id",
             "product_type_name",
             "product_group_name",
