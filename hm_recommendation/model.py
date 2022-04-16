@@ -126,7 +126,7 @@ class RankModel(tf.keras.Model):
                 name="garment_encoder")
         self.cat = tf.keras.layers.Concatenate(name="concatenate")
         self.dense0 = tf.keras.layers.Dense(
-                units=len(vocabulary["article_id"]) // 1000,
+                units=len(vocabulary["article_id"]),
                 activation="sigmoid",
                 use_bias=True,
                 name="dense0")
