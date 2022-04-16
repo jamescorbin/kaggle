@@ -142,7 +142,7 @@ def load_transactions_ds(
         transactions_fn: str=default_transact_fn,
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
-    transactions_ds = pd.read_csv(transactions_fn, nrows=2000000)
+    transactions_ds = pd.read_csv(transactions_fn)#, nrows=2000000)
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{x:010d}")
