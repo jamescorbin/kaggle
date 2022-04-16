@@ -4,6 +4,16 @@ import pandas as pd
 
 unk = "[unk]"
 
+default_articles_fn = os.path.abspath(os.path.join(
+        __file__, os.pardir,
+        "data", "articles.csv"))
+default_customer_fn = os.path.abspath(os.path.join(
+        __file__, os.pardir,
+        "data", "customers.csv"))
+default_transact_fn = os.path.abspath(os.path.join(
+        __file__, os.pardir,
+        "data", "transactions_train.csv"))
+
 def get_unknown_article():
     return {
             "product_code": 0,
@@ -31,11 +41,8 @@ def get_unknown_article():
             "garment_group_name": unk.encode("utf-8"),
             "detail_desc": unk.encode("utf-8")}
 
-def load_articles_ds():
-    articles_fn = os.path.abspath(os.path.join(
-            __file__, os.pardir,
-            "data", "articles.csv"))
-    articles_bytes_cols = [
+def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
+   articles_bytes_cols = [
             "article_id",
             "product_type_name",
             "product_group_name",
@@ -63,15 +70,12 @@ def load_articles_ds():
     articles_ds.loc[b""] = get_unknown_article()
     return articles_ds
 
-def load_customers_ds():
-    customer_fn = os.path.abspath(os.path.join(
-            __file__, os.pardir,
-            "data", "customers.csv"))
+def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
     customers_bytes_cols = [
             "customer_id",
             "club_member_status",
             "fashion_news_frequency",]
-    customers_ds = pd.read_csv(customer_fn)
+    customers_ds = pd.read_csv(customers_fn)
     customers_ds["fashion_news_frequency"] = (
             customers_ds["fashion_news_frequency"]
                 .fillna(unk)
@@ -130,11 +134,9 @@ def append_previous_purchases(
             transaction_ds[f"{price}_{n}"].fillna(0.0))
     return transaction_ds
 
-def load_transactions_ds():
-    transact_fn = os.path.abspath(os.path.join(
-            __file__, os.pardir,
-            "data", "transactions_train.csv"))
-    transactions_ds = pd.read_csv(transact_fn, nrows=1000000)
+def load_transactions_ds(
+        transactions_fn: str=default_transact_fn) -> pd.DataFrame:
+    transactions_ds = pd.read_csv(transactions_fn)
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{x:010d}")

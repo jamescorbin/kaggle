@@ -66,8 +66,7 @@ def tf_serialize_example(ds):
         tf.string)
     return tf.reshape(tf_string, ())
 
-def parse(example):
-    ts_len = 5
+def parse(example, ts_len: int=5):
     feature_description = {
         "t_dat": tf.io.FixedLenFeature([1], tf.string),
         "customer_id": tf.io.FixedLenFeature([1], tf.string),
@@ -206,7 +205,4 @@ def write_dataset(
                 tfrec_dir=tfrec_dir,
                 ts_len=ts_len,
                 tfrec_fn=f"{i:03d}.tfrec")
-
-
-
 
