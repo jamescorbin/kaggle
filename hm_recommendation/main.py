@@ -32,39 +32,59 @@ def run_serialization(
         articles_fn: str,
         customers_fn: str,
         transactions_fn: str,
+        tfrec_dir: str,
         vocab_dir: str,
         ) -> None:
-    transactions_ds = rawdata.load_transactions_ds(transactions_fn)
+    serialize.write_dataset(
+            transactions_fn,
+            tfrec_dir=tfrec_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
-    rawdata.write_vocabulary(articles_ds,
+    rawdata.write_vocabulary(
+            articles_ds,
             customers_ds,
             parent_dir=vocab_dir)
+
+def load_data(
+        articles_fn: str,
+        customers_fn: str,
+        tfrec_dir: str,
+        vocab_dir: str,):
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
+    customers_ds = rawdata.load_customers_ds(customers_fn)
+    articles_ds = rawdata.load_articles_ds(articles_fn)
     logger.info("Serializing dataset")
     dataset, articles_tf = tfsalesdata.make_tfds(
-            transactions_ds,
+            tfrec_dir,
             articles_ds,
             customers_ds)
-    #tf.data.experimental.save(dataset, path)
-    return dataset, articles_tf
+    return dataset, articles_tf, vocabulary
 
 if __name__=="__main__":
     import json
     with open("./model_cfg.json", "r") as f:
         config = json.load(f)
     vocab_dir = "vocabulary"
-    dataset, articles_tf = run_serialization(
-            "./data/articles.csv",
-            "./data/customers.csv",
-            "./data/transactions_train.csv",
-            vocab_dir
-            )
-    vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
+    tfrec_dir = "./tfrec"
+    articles_fn = "./data/articles.csv"
+    customers_fn = "./data/customers.csv"
+    transactions_fn = "./data/transactions_train.csv"
+    run_serialization(
+            articles_fn,
+            customers_fn,
+            transactions_fn,
+            tfrec_dir,
+            vocab_dir)
+    dataset, articles_tf, vocabulary = load_data(
+            articles_fn,
+            customers_fn,
+            tfrec_dir,
+            vocab_dir)
     model = model.RetrievalModel(vocabulary,
                                  articles_tf,
                                  config,
                                  name="model_a")
-    dataset = dataset.batch(config["batch_size"],
-                            drop_remainder=True)
+    dataset = dataset.batch(
+            config["batch_size"],
+            drop_remainder=True)
     model.fit(dataset, epochs=config["epochs"])

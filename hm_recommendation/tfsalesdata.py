@@ -8,6 +8,7 @@ pt = os.path.abspath(os.path.join(
     __file__, os.pardir))
 sys.path.insert(1, pt)
 import rawdata
+import serialize
 
 unk = rawdata.unk
 
@@ -64,7 +65,7 @@ def _make_hash_tables(
     return lookups
 
 def make_tfds(
-        transactions_ds: pd.DataFrame,
+        tfrec_dir: str,
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
         ts_len: int=5):
@@ -96,17 +97,10 @@ def make_tfds(
                 articles_ds["garment_group_name"].values,
             "detail_desc":
                 articles_ds["detail_desc"].values,})
-    transactions_tf = tf.data.Dataset.from_tensor_slices(
-        {
-            "price": transactions_ds[[
-                f"price_{n}" for n in range(ts_len, 0, -1)]].values,
-            "sales_channel_id": transactions_ds[[
-                f"sales_channel_id_{n}" for n in range(ts_len, 0, -1)]].values,
-            "article_id_hist": transactions_ds[[
-                f"article_id_{n}" for n in range(ts_len, 0, -1)]].values,
-            "customer_id": transactions_ds["customer_id"].values,
-            "article_id": transactions_ds["article_id"].values,
-        })
+    tfrec_files = [os.path.join(tfrec_dir, f)
+                   for f in os.listdir(tfrec_dir)]
+    transactions_tf = (tf.data.TFRecordDataset(tfrec_files)
+                       .map(serialize.parse))
     def _map(x):
         return {
             "customer_id": x["customer_id"],

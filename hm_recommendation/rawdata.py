@@ -17,33 +17,6 @@ default_transact_fn = os.path.abspath(os.path.join(
         __file__, os.pardir,
         "data", "transactions_train.csv"))
 
-def get_unknown_article():
-    return {
-            "product_code": 0,
-            "prod_name": unk.encode("utf-8"),
-            "product_type_no": 0,
-            "product_type_name": unk.encode("utf-8"),
-            "product_group_name": unk.encode("utf-8"),
-            "graphical_appearance_no": 0,
-            "graphical_appearance_name": unk.encode("utf-8"),
-            "colour_group_code": 0,
-            "colour_group_name": unk.encode("utf-8"),
-            "perceived_colour_value_id": 0,
-            "perceived_colour_value_name": unk.encode("utf-8"),
-            "perceived_colour_master_id": 0,
-            "perceived_colour_master_name": unk.encode("utf-8"),
-            "department_no": 0,
-            "department_name": unk.encode("utf-8"),
-            "index_code": 0,
-            "index_name": unk.encode("utf-8"),
-            "index_group_no": 0,
-            "index_group_name": unk.encode("utf-8"),
-            "section_no": 0,
-            "section_name": unk.encode("utf-8"),
-            "garment_group_no": 0,
-            "garment_group_name": unk.encode("utf-8"),
-            "detail_desc": unk.encode("utf-8")}
-
 def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
     logger.info(f"Opening articles dataset")
     articles_bytes_cols = [
@@ -72,7 +45,6 @@ def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
                 .str.casefold()
                 .str.encode("utf-8"))
     articles_ds = articles_ds.set_index("article_id")
-    articles_ds.loc[b""] = get_unknown_article()
     return articles_ds
 
 def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
@@ -93,14 +65,6 @@ def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
     for col in customers_bytes_cols:
         customers_ds[col] = (customers_ds[col]
                              .str.encode("utf-8"))
-    idx = pd.notnull(customers_ds["FN"])
-    customers_ds.loc[idx, "fn_mask"] = 1.0
-    customers_ds.loc[~idx, "fn_mask"] = 0.0
-    customers_ds["FN"] = customers_ds["FN"].fillna(0.0)
-    idx = pd.notnull(customers_ds["Active"])
-    customers_ds.loc[idx, "active_mask"] = 1.0
-    customers_ds.loc[~idx, "active_mask"] = 0.0
-    customers_ds["Active"] = customers_ds["Active"].fillna(0.0)
     idx = pd.notnull(customers_ds["age"])
     customers_ds.loc[idx, "age_mask"] = 1.0
     customers_ds.loc[~idx, "age_mask"] = 0.0
@@ -132,7 +96,7 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [sales_channel_id]
                     .shift(n)
-                    .fillna(unk.encode("utf-8")))
+                    .fillna("0").encode("utf-8"))
     for n in range(1, window + 1):
         transaction_ds[f"{price}_{n}_mask"] = (
             pd.notnull(transaction_ds[f"{price}_{n}"]))
@@ -141,15 +105,24 @@ def append_previous_purchases(
     return transaction_ds
 
 def load_transactions_ds(
+        skiprows: int,
         transactions_fn: str=default_transact_fn,
+        nrows: int=1_000_000,
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
-    transactions_ds = pd.read_csv(transactions_fn,
-                                  nrows=100000
-                                )
+    names = ["t_dat",
+             "customer_id",
+             "article_id",
+             "price",
+             "sales_channel_id"]
+    transactions_ds = pd.read_csv(
+            transactions_fn,
+            skiprows=skiprows + 1,
+            names=names,
+            nrows=nrows,)
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
-                .apply(lambda x: f"{x:010d}")
+                .apply(lambda x: f"{int(x):010d}")
                 .str.encode("utf-8"))
     transactions_ds["t_dat"] = transactions_ds["t_dat"].str.encode("utf-8")
     transactions_ds["customer_id"] = (
@@ -271,5 +244,4 @@ def vectorize_features(
             customers_ds[col]
             .apply(lambda x: dct[x]))
     return articles_ds, customers_ds
-
 
