@@ -145,7 +145,7 @@ def load_transactions_ds(
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
     transactions_ds = pd.read_csv(transactions_fn,
-                                  nrows=100000
+                                  #nrows=100000
                                 )
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
