@@ -43,6 +43,10 @@ class ArticleModel(tf.keras.Model):
         self.lookup = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["article_id"],
                 mask_token=None)
+        self.emb = tf.keras.layers.Embedding(
+                len(vocabulary["article_id"]) + 1,
+                config["article_embedding_dim"])
+        self.flatten = tf.keras.layers.Flatten()
         self.group_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["product_group_name"],
                 name="product_group_vectorizer")
@@ -122,9 +126,6 @@ class ArticleModel(tf.keras.Model):
         #        name="garment_encoder")
         self.batch_norm = tf.keras.layers.BatchNormalization()
         self.cat = tf.keras.layers.Concatenate(name="concatenate")
-        self.emb = tf.keras.layers.Embedding(
-                len(vocabulary["article_id"]) + 1,
-                config["article_embedding_dim"])
         self.dense0 = tf.keras.layers.Dense(
                 units=config["factor_dim"],
                 activation="sigmoid",
@@ -135,6 +136,7 @@ class ArticleModel(tf.keras.Model):
         x = inputs["article_id"]
         x = self.lookup(x)
         x = self.emb(x)
+        x = self.flatten(x)
         xgroup = inputs["product_group_name"]
         xgroup = self.group_vec(xgroup)
         xgroup = self.group_encoder(xgroup)
