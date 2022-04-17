@@ -96,7 +96,7 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [sales_channel_id]
                     .shift(n)
-                    .fillna("0").encode("utf-8"))
+                    .fillna(b"0"))
     for n in range(1, window + 1):
         transaction_ds[f"{price}_{n}_mask"] = (
             pd.notnull(transaction_ds[f"{price}_{n}"]))
