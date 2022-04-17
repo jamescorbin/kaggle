@@ -4,8 +4,12 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+pt = os.path.abspath(os.path.join(
+    __file__, os.pardir))
+sys.path.insert(1, pt)
+import rawdata
 
-unk = "[unk]"
+unk = rawdata.unk
 
 def _make_hash_tables(
         articles_ds: pd.DataFrame,
@@ -106,39 +110,62 @@ def make_tfds(
     def _map(x):
         return {
             "customer_id": x["customer_id"],
-            "product_type_name":
-                lookups["product_type_name"].lookup(x["article_id_hist"]),
-            "product_group_name":
-                lookups["product_group_name"].lookup(x["article_id_hist"]),
-            "graphical_appearance_name":
-                lookups["graphical_appearance_name"].lookup(x["article_id_hist"]),
-            "colour_group_name":
-                lookups["colour_group_name"].lookup(x["article_id_hist"]),
-            "perceived_colour_value_name":
-                lookups["perceived_colour_value_name"].lookup(x["article_id_hist"]),
-            "perceived_colour_master_name":
-                lookups["perceived_colour_master_name"].lookup(x["article_id_hist"]),
-            "department_name":
-                lookups["department_name"].lookup(x["article_id_hist"]),
-            "index_name":
-                lookups["index_name"].lookup(x["article_id_hist"]),
-            "index_group_name":
-                lookups["index_group_name"].lookup(x["article_id_hist"]),
-            "section_name":
-                lookups["section_name"].lookup(x["article_id_hist"]),
-            "garment_group_name":
-                lookups["garment_group_name"].lookup(x["article_id_hist"]),
-            "detail_desc":
-                lookups["detail_desc"].lookup(x["article_id_hist"]),
             "age":
                 lookups["age"].lookup(x["customer_id"]),
             "club_member_status":
                 lookups["club_member_status"].lookup(x["customer_id"]),
             "fashion_news_frequency":
                 lookups["fashion_news_frequency"].lookup(x["customer_id"]),
+            "article_id_hist": x["article_id_hist"],
+            "article_id": x["article_id"],
+            "product_type_name":
+                lookups["product_type_name"].lookup(x["article_id"]),
+            "product_type_name_hist":
+                lookups["product_type_name"].lookup(x["article_id_hist"]),
+            "product_group_name":
+                lookups["product_group_name"].lookup(x["article_id"]),
+            "product_group_name_hist":
+                lookups["product_group_name"].lookup(x["article_id_hist"]),
+            "graphical_appearance_name":
+                lookups["graphical_appearance_name"].lookup(x["article_id"]),
+            "graphical_appearance_name_hist":
+                lookups["graphical_appearance_name"].lookup(x["article_id_hist"]),
+            "colour_group_name":
+                lookups["colour_group_name"].lookup(x["article_id"]),
+            "colour_group_name_hist":
+                lookups["colour_group_name"].lookup(x["article_id_hist"]),
+            "perceived_colour_value_name":
+                lookups["perceived_colour_value_name"].lookup(x["article_id"]),
+            "perceived_colour_value_name_hist":
+                lookups["perceived_colour_value_name"].lookup(x["article_id_hist"]),
+            "perceived_colour_master_name":
+                lookups["perceived_colour_master_name"].lookup(x["article_id"]),
+            "perceived_colour_master_name_hist":
+                lookups["perceived_colour_master_name"].lookup(x["article_id_hist"]),
+            "department_name":
+                lookups["department_name"].lookup(x["article_id"]),
+            "department_name_hist":
+                lookups["department_name"].lookup(x["article_id_hist"]),
+            "index_name":
+                lookups["index_name"].lookup(x["article_id"]),
+            "index_name_hist":
+                lookups["index_name"].lookup(x["article_id_hist"]),
+            "index_group_name":
+                lookups["index_group_name"].lookup(x["article_id"]),
+            "index_group_name_hist":
+                lookups["index_group_name"].lookup(x["article_id_hist"]),
+            "section_name":
+                lookups["section_name"].lookup(x["article_id"]),
+            "section_name_hist":
+                lookups["section_name"].lookup(x["article_id_hist"]),
+            "garment_group_name":
+                lookups["garment_group_name"].lookup(x["article_id"]),
+            "garment_group_name_hist":
+                lookups["garment_group_name"].lookup(x["article_id_hist"]),
+            "detail_desc":
+                lookups["detail_desc"].lookup(x["article_id"]),
             "price": x["price"],
             "sales_channel_id": x["sales_channel_id"],
-            "article_id": x["article_id"],}
+            }
     transactions_tf = transactions_tf.map(_map)
     return transactions_tf, articles_tf
-

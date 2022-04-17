@@ -2,7 +2,7 @@
 """
 import sys
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
 import tensorflow as tf
 import tensorflow_recommenders as tfrs
 
@@ -37,7 +37,7 @@ class CustomerModel(tf.keras.Model):
         return x
 
 class ArticleModel(tf.keras.Model):
-    def __init__(self, vocabulary, embedding_dim: int, **kwargs):
+    def __init__(self, vocabulary, config: Dict[str, Any], **kwargs):
         super().__init__(**kwargs)
         output_type = "one_hot"
         self.lookup = tf.keras.layers.StringLookup(
@@ -47,21 +47,21 @@ class ArticleModel(tf.keras.Model):
                 vocabulary=vocabulary["product_group_name"],
                 name="product_group_vectorizer")
         self.group_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["product_group_name"]),
+                num_tokens=len(vocabulary["product_group_name"]) + 1,
                 output_mode=output_type,
                 name="product_group_encoder")
         self.graphical_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["graphical_appearance_name"],
                 name="graphical_vectorizer")
         self.graphical_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["graphical_appearance_name"]),
+                num_tokens=len(vocabulary["graphical_appearance_name"]) + 1,
                 output_mode=output_type,
                 name="graphical_encoder")
         self.colour_master_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["perceived_colour_master_name"],
                 name="colour_master_vectorizer")
         self.colour_master_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["perceived_colour_master_name"]),
+                num_tokens=len(vocabulary["perceived_colour_master_name"]) + 1,
                 output_mode=output_type,
                 name="colour_master_encoder")
         #self.type_lookup = tf.keras.layers.StringLookup(
@@ -124,7 +124,12 @@ class ArticleModel(tf.keras.Model):
         self.cat = tf.keras.layers.Concatenate(name="concatenate")
         self.emb = tf.keras.layers.Embedding(
                 len(vocabulary["article_id"]) + 1,
-                embedding_dim)
+                config["article_embedding_dim"])
+        self.dense0 = tf.keras.layers.Dense(
+                units=config["factor_dim"],
+                activation="sigmoid",
+                use_bias=False,
+                name="dense0")
 
     def call(self, inputs):
         x = inputs["article_id"]
@@ -145,36 +150,39 @@ class ArticleModel(tf.keras.Model):
             xgraphical,
             xcolourmaster])
         x = self.batch_norm(x)
+        x = self.dense0(x)
         return x
 
 class SequentialQueryModel(tf.keras.Model):
-    def __init__(self, vocabulary, embedding_dim: int, **kwargs):
+    def __init__(self, vocabulary, config, **kwargs):
         super().__init__(**kwargs)
-        output_type = "count"
         self.lookup = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["article_id"],
                 mask_token=None)
         self.group_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["product_group_name"],
                 name="product_group_vectorizer")
-        self.group_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["product_group_name"]),
-                output_mode=output_type,
+        self.group_encoder = tf.keras.layers.Embedding(
+                len(vocabulary["product_group_name"]) + 1,
+                len(vocabulary["product_group_name"]) // 2,
                 name="product_group_encoder")
+        self.group_norm = tf.keras.layers.BatchNormalization()
         self.graphical_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["graphical_appearance_name"],
                 name="graphical_vectorizer")
-        self.graphical_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["graphical_appearance_name"]),
-                output_mode=output_type,
+        self.graphical_encoder = tf.keras.layers.Embedding(
+                len(vocabulary["graphical_appearance_name"]) + 1,
+                len(vocabulary["graphical_appearance_name"]) // 2,
                 name="graphical_encoder")
+        self.graphical_norm = tf.keras.layers.BatchNormalization()
         self.colour_master_vec = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["perceived_colour_master_name"],
                 name="colour_master_vectorizer")
-        self.colour_master_encoder = tf.keras.layers.CategoryEncoding(
-                num_tokens=len(vocabulary["perceived_colour_master_name"]),
-                output_mode=output_type,
+        self.colour_master_encoder = tf.keras.layers.Embedding(
+                len(vocabulary["perceived_colour_master_name"]) + 1,
+                len(vocabulary["perceived_colour_master_name"]) // 2,
                 name="colour_master_encoder")
+        self.colour_master_norm = tf.keras.layers.BatchNormalization()
         #self.type_lookup = tf.keras.layers.StringLookup(
         #        vocabulary=vocabulary["product_type_name"],
         #        name="product_type_vectorizer")
@@ -245,40 +253,42 @@ class SequentialQueryModel(tf.keras.Model):
                 num_tokens=len(vocabulary["fashion_news_frequency"]) + 2,
                 output_mode="one_hot",
                 name="news_frequency_encoder")
-        self.batch_norm = tf.keras.layers.BatchNormalization()
+        self.batch_norm0 = tf.keras.layers.BatchNormalization()
+        self.batch_norm1 = tf.keras.layers.BatchNormalization()
         self.cat = tf.keras.layers.Concatenate(name="concatenate")
         self.emb = tf.keras.layers.Embedding(
                 len(vocabulary["article_id"]) + 1,
-                embedding_dim)
-        self.gru = tf.keras.layers.GRU(embedding_dim)
+                config["article_embedding_dim"],
+                name="article_embedding")
+        self.gru = tf.keras.layers.GRU(config["gru_dim"])
         self.dense0 = tf.keras.layers.Dense(
-                units=embedding_dim,
+                units=config["factor_dim"],
                 activation="sigmoid",
                 use_bias=True,
                 name="dense0")
 
     def call(self, inputs):
-        x = inputs["article_id"]
+        x = inputs["article_id_hist"]
         x = self.lookup(x)
         x = self.emb(x)
-        xgroup = inputs["product_group_name"]
+        xgroup = inputs["product_group_name_hist"]
         xgroup = self.group_vec(xgroup)
         xgroup = self.group_encoder(xgroup)
-        xgroup = self.batch_norm(xgroup)
-        xgraphical = inputs["graphical_appearance_name"]
+        xgroup = self.group_norm(xgroup)
+        xgraphical = inputs["graphical_appearance_name_hist"]
         xgraphical = self.graphical_vec(xgraphical)
         xgraphical = self.graphical_encoder(xgraphical)
-        xgraphical = self.batch_norm(xgraphical)
-        xcolourmaster = inputs["perceived_colour_master_name"]
+        xgraphical = self.graphical_norm(xgraphical)
+        xcolourmaster = inputs["perceived_colour_master_name_hist"]
         xcolourmaster = self.colour_master_vec(xcolourmaster)
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
-        xcolourmaster = self.batch_norm(xcolourmaster)
+        xcolourmaster = self.colour_master_norm(xcolourmaster)
         x = self.cat([
             x,
             xgroup,
             xgraphical,
             xcolourmaster])
-        x = self.batch_norm(x)
+        x = self.batch_norm0(x)
         x = self.gru(x)
         xclub = inputs["club_member_status"]
         xclub = self.club_vec(xclub)
@@ -287,15 +297,15 @@ class SequentialQueryModel(tf.keras.Model):
         xnews = self.news_vec(xnews)
         xnews = self.news_encoder(xnews)
         x = self.cat([x, xclub, xnews])
-        x = self.batch_norm(x)
+        x = self.batch_norm1(x)
         x = self.dense0(x)
         return x
 
 class RetrievalModel(tfrs.Model):
-    def __init__(self, vocabulary, articles_ds, embedding_dim, **kwargs):
+    def __init__(self, vocabulary, articles_ds, config, **kwargs):
         super().__init__(**kwargs)
-        self.customer_model = SequentialQueryModel(vocabulary, embedding_dim)
-        self.article_model = ArticleModel(vocabulary, embedding_dim)
+        self.customer_model = SequentialQueryModel(vocabulary, config)
+        self.article_model = ArticleModel(vocabulary, config)
         self.task = tfrs.tasks.Retrieval(
             metrics=tfrs.metrics.FactorizedTopK(
                 articles_ds.batch(128).map(self.article_model)))
