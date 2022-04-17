@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 
 logger = logging.getLogger(name=__name__)
-unk = "[unk]"
+unk = "[UNK]"
 
 default_articles_fn = os.path.abspath(os.path.join(
         __file__, os.pardir,
@@ -48,6 +48,7 @@ def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
     logger.info(f"Opening articles dataset")
     articles_bytes_cols = [
             "article_id",
+            "prod_name",
             "product_type_name",
             "product_group_name",
             "graphical_appearance_name",
@@ -144,7 +145,7 @@ def load_transactions_ds(
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
     transactions_ds = pd.read_csv(transactions_fn,
-                                 # nrows=1000000
+                                  nrows=100000
                                 )
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
@@ -168,6 +169,7 @@ def write_vocabulary(
     if not os.path.exists(parent_dir):
         os.mkdir(parent_dir)
     article_ids = articles_ds.index.unique().tolist()
+    product_name = articles_ds["prod_name"].unique().tolist()
     garment_voc = articles_ds["garment_group_name"].unique().tolist()
     section_voc = articles_ds["section_name"].unique().tolist()
     index_voc = articles_ds["index_name"].unique().tolist()
@@ -186,8 +188,11 @@ def write_vocabulary(
     club_member_voc = customers_ds["club_member_status"].unique().tolist()
     fashion_news_voc = (customers_ds["fashion_news_frequency"]
             .unique().tolist())
+    customer_id = customers_ds.index.tolist()
     pairs = [
-        (article_ids, "article_ids.txt"), (garment_voc, "garments.txt"),
+        (article_ids, "article_ids.txt"),
+        (product_name, "product_name.txt"),
+        (garment_voc, "garments.txt"),
         (section_voc, "sections.txt"),
         (index_voc, "index_names.txt"),
         (index_group_voc, "index_groups.txt"),
@@ -200,10 +205,12 @@ def write_vocabulary(
         (product_type_voc, "product_type_names.txt"),
         (club_member_voc, "club_member_statuses.txt"),
         (fashion_news_voc, "fashion_news.txt"),
+        (customer_id, "customer_id.txt"),
     ]
     for lst, bn in pairs:
         fn = os.path.join(parent_dir, bn)
         with open(fn, "w") as f:
+            logger.info(bn)
             for w in lst:
                 f.write(w.decode("utf-8") + "\n")
 
@@ -211,23 +218,13 @@ def load_vocabulary(
         parent_dir: str="./vocabulary"):
     """
     """
-    vocabularies = {
-        "article_ids": [],
-        "garment_voc": [],
-        "section_voc": [],
-        "index_voc": [],
-        "index_group_voc": [],
-        "department_voc": [],
-        "colour_value_voc": [],
-        "colour_master_voc": [],
-        "colour_group_voc": [],
-        "graphical_appearance_voc": [],
-        "product_group_voc": [],
-        "product_type_voc": [],
-        "club_member_voc": [],
-        "fashion_news_voc": [],}
+    vocabularies = {}
     pairs = [
         ("article_id", "article_ids.txt"),
+        ("customer_id", "customer_id.txt"),
+        ("prod_name", "product_name.txt"),
+        ("product_type_name", "product_type_names.txt"),
+        ("product_group_name", "product_group_names.txt"),
         ("garment_group_name", "garments.txt"),
         ("section_name", "sections.txt"),
         ("index_name", "index_names.txt"),
@@ -237,8 +234,6 @@ def load_vocabulary(
         ("perceived_colour_master_name", "colour_master_names.txt"),
         ("colour_group_name", "colour_group_names.txt"),
         ("graphical_appearance_name", "graphical_appearance_names.txt"),
-        ("product_group_name", "product_group_names.txt"),
-        ("product_type_name", "product_type_names.txt"),
         ("club_member_status", "club_member_statuses.txt"),
         ("fashion_news_frequency", "fashion_news.txt"),]
     for lst, bn in pairs:

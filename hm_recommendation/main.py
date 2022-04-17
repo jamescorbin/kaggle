@@ -41,23 +41,30 @@ def run_serialization(
             customers_ds,
             parent_dir=vocab_dir)
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
-    article_ids_map = {
-            x: i for i, x in enumerate(vocabulary["article_id"])}
-    transactions_ds["target"] = (
-            transactions_ds["article_id"].apply(lambda x: article_ids_map[x]))
     logger.info("Serializing dataset")
-    dataset = tfsalesdata.make_tfds(transactions_ds, articles_ds, customers_ds)
-    return dataset
+    dataset, articles_tf = tfsalesdata.make_tfds(
+            transactions_ds,
+            articles_ds,
+            customers_ds)
+    #tf.data.experimental.save(dataset, path)
+    return dataset, articles_tf
 
 if __name__=="__main__":
+    import json
+    with open("./model_cfg.json", "r") as f:
+        config = json.load(f)
     vocab_dir = "vocabulary"
-    dataset = run_serialization(
+    dataset, articles_tf = run_serialization(
             "./data/articles.csv",
             "./data/customers.csv",
             "./data/transactions_train.csv",
             vocab_dir
             )
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
-    model = model.RankModel(vocabulary, name="model_a")
-    dataset = dataset.batch(64, drop_remainder=True)
-    model.fit(dataset, epochs=2)
+    model = model.RetrievalModel(vocabulary,
+                                 articles_tf,
+                                 config,
+                                 name="model_a")
+    dataset = dataset.batch(config["batch_size"],
+                            drop_remainder=True)
+    model.fit(dataset, epochs=config["epochs"])

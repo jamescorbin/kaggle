@@ -1,0 +1,8 @@
+{
+		"batch_size": 128,
+		"epochs": 5,
+		"factor_dim": 64,
+		"article_embedding_dim": 64,
+		"gru_dim": 64,
+		"version": "0.0.0"
+}
