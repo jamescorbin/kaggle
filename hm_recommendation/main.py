@@ -5,7 +5,7 @@ To pull dataset:
 import sys
 import os
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -49,7 +49,8 @@ def load_data(
         articles_fn: str,
         customers_fn: str,
         tfrec_dir: str,
-        vocab_dir: str,):
+        vocab_dir: str,
+        config: Dict[str, Any]):
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
@@ -57,7 +58,8 @@ def load_data(
     dataset, articles_tf = tfsalesdata.make_tfds(
             tfrec_dir,
             articles_ds,
-            customers_ds)
+            customers_ds,
+            config)
     return dataset, articles_tf, vocabulary
 
 if __name__=="__main__":
@@ -69,22 +71,22 @@ if __name__=="__main__":
     articles_fn = "./data/articles.csv"
     customers_fn = "./data/customers.csv"
     transactions_fn = "./data/transactions_train.csv"
+    """
     run_serialization(
             articles_fn,
             customers_fn,
             transactions_fn,
             tfrec_dir,
             vocab_dir)
+    """
     dataset, articles_tf, vocabulary = load_data(
             articles_fn,
             customers_fn,
             tfrec_dir,
-            vocab_dir)
+            vocab_dir,
+            config)
     model = model.RetrievalModel(vocabulary,
                                  articles_tf,
                                  config,
                                  name="model_a")
-    dataset = dataset.batch(
-            config["batch_size"],
-            drop_remainder=True)
     model.fit(dataset, epochs=config["epochs"])
