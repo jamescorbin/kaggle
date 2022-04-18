@@ -1,6 +1,6 @@
 import sys
 import os
-from typing import Dict, List
+from typing import Dict, List, Any
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -68,6 +68,7 @@ def make_tfds(
         tfrec_dir: str,
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
+        config: Dict[str, Any],
         ts_len: int=5):
     lookups = _make_hash_tables(articles_ds, customers_ds)
     articles_tf = tf.data.Dataset.from_tensor_slices(
@@ -161,5 +162,9 @@ def make_tfds(
             "price": x["price"],
             "sales_channel_id": x["sales_channel_id"],
             }
-    transactions_tf = transactions_tf.map(_map)
+    transactions_tf = (
+        transactions_tf
+            .prefetch(tf.data.AUTOTUNE)
+            .batch(config["batch_size"], drop_remainder=True)
+            .map(_map, num_parallel_calls=tf.data.AUTOTUNE))
     return transactions_tf, articles_tf
