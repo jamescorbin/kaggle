@@ -64,12 +64,9 @@ def _make_hash_tables(
                 default_value=0))
     return lookups
 
-def make_tfds(
-        tfrec_dir: str,
+def make_articles_tf(
         articles_ds: pd.DataFrame,
-        customers_ds: pd.DataFrame,
-        config: Dict[str, Any],
-        ts_len: int=5):
+        customers_ds: pd.DataFrame):
     lookups = _make_hash_tables(articles_ds, customers_ds)
     articles_tf = tf.data.Dataset.from_tensor_slices(
         {
@@ -98,10 +95,16 @@ def make_tfds(
                 articles_ds["garment_group_name"].values,
             "detail_desc":
                 articles_ds["detail_desc"].values,})
+    return lookups, articles_tf
+
+def make_tfds(
+        tfrec_dir: str,
+        lookups: Dict[str, Any],
+        articles_tf: tf.data.Dataset,
+        config: Dict[str, Any],
+        ts_len: int=5):
     tfrec_files = [os.path.join(tfrec_dir, f)
                    for f in os.listdir(tfrec_dir)]
-    transactions_tf = (tf.data.TFRecordDataset(tfrec_files)
-                       .map(serialize.parse))
     def _map(x):
         return {
             "customer_id": x["customer_id"],
@@ -162,9 +165,19 @@ def make_tfds(
             "price": x["price"],
             "sales_channel_id": x["sales_channel_id"],
             }
+
+    #transactions_tf = (tf.data.TFRecordDataset(tfrec_files)
+    #                   .map(serialize.parse))
+    filenames = tf.data.Dataset.from_tensor_slices(tfrec_files)
     transactions_tf = (
-        transactions_tf
-            .prefetch(tf.data.AUTOTUNE)
+        filenames
+            .interleave(
+                lambda filename: tf.data.TFRecordDataset(filename)
+                    .map(serialize.parse, num_parallel_calls=1),
+                cycle_length=4,
+                num_parallel_calls=tf.data.AUTOTUNE)
             .batch(config["batch_size"], drop_remainder=True)
-            .map(_map, num_parallel_calls=tf.data.AUTOTUNE))
+            .map(_map, num_parallel_calls=tf.data.AUTOTUNE)
+            .prefetch(tf.data.AUTOTUNE)
+            )
     return transactions_tf, articles_tf
