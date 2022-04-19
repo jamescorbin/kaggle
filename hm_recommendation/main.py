@@ -14,7 +14,7 @@ pt = os.path.abspath(os.path.join(
 sys.path.insert(1, pt)
 import serialize
 import rawdata
-import model
+import recommendmodel
 import tfsalesdata
 
 frmt = ("[%(asctime)s] %(levelname)s "
@@ -63,7 +63,7 @@ def load_data(
             lookups,
             articles_tf,
             config)
-    return dataset, articles_tf, vocabulary
+    return dataset, articles_tf, vocabulary, lookups
 
 if __name__=="__main__":
     import json
@@ -82,14 +82,16 @@ if __name__=="__main__":
             tfrec_dir,
             vocab_dir)
     """
-    dataset, articles_tf, vocabulary = load_data(
+    dataset, articles_tf, vocabulary, lookups = load_data(
             articles_fn,
             customers_fn,
             tfrec_dir,
             vocab_dir,
             config)
-    model = model.RetrievalModel(vocabulary,
-                                 articles_tf,
-                                 config,
-                                 name="model_a")
+    model = recommendmodel.RetrievalModel(
+                                vocabulary,
+                                articles_tf,
+                                lookups,
+                                config,
+                                name="model_a")
     model.fit(dataset, epochs=config["epochs"])

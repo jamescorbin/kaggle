@@ -9,7 +9,7 @@ import tensorflow_recommenders as tfrs
 class CustomerModel(tf.keras.Model):
     def __init__(self, vocabulary, embedding_dim: int, **kwargs):
         super().__init__(**kwargs)
-        self.lookup = tf.keras.layers.StringLookup(
+        self.customer_id_lookup = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["customer_id"],
                 mask_token=None)
         #self.club_vec = tf.keras.layers.StringLookup(
@@ -32,15 +32,19 @@ class CustomerModel(tf.keras.Model):
 
     def call(self, inputs):
         x = inputs["customer_id"]
-        x = self.lookup(x)
+        x = self.customer_id_lookup(x)
         x = self.emb(x)
         return x
 
 class ArticleModel(tf.keras.Model):
-    def __init__(self, vocabulary, config: Dict[str, Any], **kwargs):
+    def __init__(self,
+                 vocabulary,
+                 lookups,
+                 config: Dict[str, Any], **kwargs):
         super().__init__(**kwargs)
         output_type = "one_hot"
-        self.lookup = tf.keras.layers.StringLookup(
+        self.lookups = lookups
+        self.article_id_lookup = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["article_id"],
                 mask_token=None)
         self.emb = tf.keras.layers.Embedding(
@@ -134,16 +138,19 @@ class ArticleModel(tf.keras.Model):
 
     def call(self, inputs):
         x = inputs["article_id"]
-        x = self.lookup(x)
+        x = self.article_id_lookup(x)
         x = self.emb(x)
         x = self.flatten(x)
-        xgroup = inputs["product_group_name"]
+        xgroup = self.lookups["product_group_name"].lookup(
+                inputs["article_id"])
         xgroup = self.group_vec(xgroup)
         xgroup = self.group_encoder(xgroup)
-        xgraphical = inputs["graphical_appearance_name"]
+        xgraphical = self.lookups["graphical_appearance_name"].lookup(
+                inputs["article_id"])
         xgraphical = self.graphical_vec(xgraphical)
         xgraphical = self.graphical_encoder(xgraphical)
-        xcolourmaster = inputs["perceived_colour_master_name"]
+        xcolourmaster = self.lookups["perceived_colour_master_name"].lookup(
+                inputs["article_id"])
         xcolourmaster = self.colour_master_vec(xcolourmaster)
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
         x = self.cat([
@@ -156,9 +163,14 @@ class ArticleModel(tf.keras.Model):
         return x
 
 class SequentialQueryModel(tf.keras.Model):
-    def __init__(self, vocabulary, config, **kwargs):
+    def __init__(self,
+                 vocabulary,
+                 lookups,
+                 config,
+                 **kwargs):
         super().__init__(**kwargs)
-        self.lookup = tf.keras.layers.StringLookup(
+        self.lookups = lookups
+        self.article_id_lookup = tf.keras.layers.StringLookup(
                 vocabulary=vocabulary["article_id"],
                 mask_token=None)
         self.group_vec = tf.keras.layers.StringLookup(
@@ -271,17 +283,23 @@ class SequentialQueryModel(tf.keras.Model):
 
     def call(self, inputs):
         x = inputs["article_id_hist"]
-        x = self.lookup(x)
+        x = self.article_id_lookup(x)
         x = self.emb(x)
-        xgroup = inputs["product_group_name_hist"]
+        #xgroup = inputs["product_group_name_hist"]
+        xgroup = self.lookups["product_group_name"].lookup(
+                inputs["article_id_hist"])
         xgroup = self.group_vec(xgroup)
         xgroup = self.group_encoder(xgroup)
         xgroup = self.group_norm(xgroup)
-        xgraphical = inputs["graphical_appearance_name_hist"]
+        #xgraphical = inputs["graphical_appearance_name_hist"]
+        xgraphical = self.lookups["graphical_appearance_name"].lookup(
+                inputs["article_id_hist"])
         xgraphical = self.graphical_vec(xgraphical)
         xgraphical = self.graphical_encoder(xgraphical)
         xgraphical = self.graphical_norm(xgraphical)
-        xcolourmaster = inputs["perceived_colour_master_name_hist"]
+        #xcolourmaster = inputs["perceived_colour_master_name_hist"]
+        xcolourmaster = self.lookups["perceived_colour_master_name"].lookup(
+                inputs["article_id_hist"])
         xcolourmaster = self.colour_master_vec(xcolourmaster)
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
         xcolourmaster = self.colour_master_norm(xcolourmaster)
@@ -292,10 +310,14 @@ class SequentialQueryModel(tf.keras.Model):
             xcolourmaster])
         x = self.batch_norm0(x)
         x = self.gru(x)
-        xclub = inputs["club_member_status"]
+        #xclub = inputs["club_member_status"]
+        xclub = self.lookups["club_member_status"].lookup(
+                inputs["customer_id"])
         xclub = self.club_vec(xclub)
         xclub = self.club_encoder(xclub)
-        xnews = inputs["fashion_news_frequency"]
+        #xnews = inputs["fashion_news_frequency"]
+        xnews = self.lookups["fashion_news_frequency"].lookup(
+                inputs["customer_id"])
         xnews = self.news_vec(xnews)
         xnews = self.news_encoder(xnews)
         x = self.cat([x, xclub, xnews])
@@ -304,13 +326,25 @@ class SequentialQueryModel(tf.keras.Model):
         return x
 
 class RetrievalModel(tfrs.Model):
-    def __init__(self, vocabulary, articles_ds, config, **kwargs):
+    def __init__(self,
+                 vocabulary,
+                 articles_ds,
+                 lookups,
+                 config, **kwargs):
         super().__init__(**kwargs)
-        self.customer_model = SequentialQueryModel(vocabulary, config)
-        self.article_model = ArticleModel(vocabulary, config)
+        self.customer_model = SequentialQueryModel(
+                vocabulary,
+                lookups,
+                config)
+        self.article_model = ArticleModel(
+                vocabulary,
+                lookups,
+                config)
         self.task = tfrs.tasks.Retrieval(
             metrics=tfrs.metrics.FactorizedTopK(
-                articles_ds.batch(128).map(self.article_model)))
+                articles_ds
+                    .batch(config["top_k_batch_size"])
+                    .map(self.article_model)))
         opt = tf.keras.optimizers.Adagrad(learning_rate=0.1)
         self.compile(optimizer=opt)
 
