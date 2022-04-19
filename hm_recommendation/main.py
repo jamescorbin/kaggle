@@ -55,10 +55,13 @@ def load_data(
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
     logger.info("Serializing dataset")
+    lookups, articles_tf = tfsalesdata.make_articles_tf(
+            articles_ds,
+            customers_ds)
     dataset, articles_tf = tfsalesdata.make_tfds(
             tfrec_dir,
-            articles_ds,
-            customers_ds,
+            lookups,
+            articles_tf,
             config)
     return dataset, articles_tf, vocabulary
 
