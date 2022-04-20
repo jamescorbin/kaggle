@@ -1,7 +1,7 @@
 import sys
 import os
 import logging
-from typing import Dict, List, Any
+from typing import Dict
 import tensorflow as tf
 import pandas as pd
 import numpy as np
@@ -24,12 +24,12 @@ def _floatlist(value):
 
 def serialize_example(ds: Dict[str, np.array]):
     feature = {
-        "customer_id": _int64list(ds["customer_id"]),
-        "article_id": _int64list(ds["article_id"]),
-        "article_id_hist": _int64list(ds["article_id_hist"]),
+        "customer_id": _byteslist(ds["customer_id"]),
+        "article_id": _byteslist(ds["article_id"]),
+        "article_id_hist": _byteslist(ds["article_id_hist"]),
         "t_dat": _byteslist(ds["t_dat"]),
-        "sales_channel_id": _int64list(ds["sales_channel_id"]),
         "price": _floatlist(ds["price"]),
+        "sales_channel_id": _byteslist(ds["sales_channel_id"]),
         }
     example_proto = tf.train.Example(
             features=tf.train.Features(feature=feature))
@@ -44,15 +44,15 @@ def tf_serialize_example(ds):
 
 def parse(example, ts_len: int=5):
     feature_description = {
-        "customer_id": tf.io.FixedLenFeature([1], tf.int64),
-        "t_dat": tf.io.FixedLenFeature([1], tf.string),
+        "customer_id": tf.io.FixedLenFeature([1], tf.string),
         "article_id":
-                tf.io.FixedLenFeature([1], tf.int64),
+                tf.io.FixedLenFeature([1], tf.string),
         "article_id_hist":
-                tf.io.FixedLenFeature([ts_len], tf.int64),
-        "sales_channel_id":
-                tf.io.FixedLenFeature([ts_len], tf.int64),
+                tf.io.FixedLenFeature([ts_len], tf.string),
+        "t_dat": tf.io.FixedLenFeature([1], tf.string),
         "price": tf.io.FixedLenFeature([2 * ts_len], tf.float32),
+        "sales_channel_id":
+                tf.io.FixedLenFeature([ts_len], tf.string),
         }
     return tf.io.parse_single_example(
             example,
@@ -86,7 +86,6 @@ def write_chunk(
 
 def write_dataset(
             transactions_fn: str,
-            vocabulary: Dict[str, List[str]],
             tfrec_dir: str="tfrec",
             ts_len: int=5,
             filesize: int=1_000_000):
@@ -95,7 +94,6 @@ def write_dataset(
     shards = 32
     for i in range(shards):
         chunk = rawdata.load_transactions_ds(
-                vocabulary=vocabulary,
                 transactions_fn=transactions_fn,
                 skiprows=i * filesize)
         write_chunk(

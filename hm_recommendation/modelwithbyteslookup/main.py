@@ -35,17 +35,15 @@ def run_serialization(
         tfrec_dir: str,
         vocab_dir: str,
         ) -> None:
+    serialize.write_dataset(
+            transactions_fn,
+            tfrec_dir=tfrec_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
     rawdata.write_vocabulary(
             articles_ds,
             customers_ds,
             parent_dir=vocab_dir)
-    vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
-    serialize.write_dataset(
-            transactions_fn,
-            vocabulary,
-            tfrec_dir=tfrec_dir)
 
 def load_data(
         articles_fn: str,
@@ -57,10 +55,6 @@ def load_data(
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
     logger.info("Serializing dataset")
-    articles_ds, customers_ds = rawdata.vectorize_features(
-            articles_ds,
-            customers_ds,
-            vocabulary)
     lookups, articles_tf = tfsalesdata.make_articles_tf(
             articles_ds,
             customers_ds)
@@ -80,12 +74,14 @@ if __name__=="__main__":
     articles_fn = "./data/articles.csv"
     customers_fn = "./data/customers.csv"
     transactions_fn = "./data/transactions_train.csv"
-    #run_serialization(
-    #        articles_fn,
-    #        customers_fn,
-    #        transactions_fn,
-    #        tfrec_dir,
-    #        vocab_dir)
+    """
+    run_serialization(
+            articles_fn,
+            customers_fn,
+            transactions_fn,
+            tfrec_dir,
+            vocab_dir)
+    """
     dataset, articles_tf, vocabulary, lookups = load_data(
             articles_fn,
             customers_fn,

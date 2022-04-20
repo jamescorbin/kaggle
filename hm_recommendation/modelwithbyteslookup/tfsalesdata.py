@@ -16,42 +16,52 @@ def _make_hash_tables(
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
         ) -> pd.DataFrame:
-    article_id = tf.constant(articles_ds["article_id"].values)
-    customer_id = tf.constant(customers_ds["customer_id"].values)
+    article_id = tf.constant(articles_ds.index.values)
     article_columns = [
+            "product_type_name",
             "product_group_name",
             "graphical_appearance_name",
+            "colour_group_name",
+            "perceived_colour_value_name",
             "perceived_colour_master_name",
-            #"product_type_name",
-            #"colour_group_name",
-            #"perceived_colour_value_name",
-            #"department_name",
-            #"index_name",
-            #"index_group_name",
-            #"section_name",
-            #"garment_group_name",
-            #"detail_desc",
-            ]
+            "department_name",
+            "index_name",
+            "index_group_name",
+            "section_name",
+            "garment_group_name",
+            "detail_desc"]
     lookups = {
         col: tf.lookup.StaticHashTable(
             tf.lookup.KeyValueTensorInitializer(
                     article_id,
                     tf.constant(articles_ds[col].values)),
-            default_value=0)
+            default_value=unk.encode("utf-8"))
         for col in article_columns}
     lookups.update({
         col: tf.lookup.StaticHashTable(
             tf.lookup.KeyValueTensorInitializer(
-                    customer_id,
+                    tf.constant(customers_ds.index.values),
                     tf.constant(customers_ds[col].values)),
-            default_value=0)
+            default_value=unk.encode("utf-8"))
         for col in ["club_member_status", "fashion_news_frequency"]})
     lookups["age"] = (
             tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
-                        customer_id,
+                        tf.constant(customers_ds.index.values),
                         tf.constant(customers_ds["age"].values)),
                 default_value=0.0))
+    lookups["article_id"] = (
+            tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    article_id,
+                    tf.range(0, len(articles_ds), 1)),
+                default_value=0))
+    lookups["customer_id"] = (
+            tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    customers_ds.index.values,
+                    tf.range(0, len(customers_ds), 1)),
+                default_value=0))
     return lookups
 
 def make_articles_tf(
@@ -60,7 +70,7 @@ def make_articles_tf(
     lookups = _make_hash_tables(articles_ds, customers_ds)
     articles_tf = tf.data.Dataset.from_tensor_slices(
         {
-            "article_id": articles_ds["article_id"].values,
+            "article_id": articles_ds.index.values,
             "product_type_name":
                 articles_ds["product_type_name"].values,
             "product_group_name":

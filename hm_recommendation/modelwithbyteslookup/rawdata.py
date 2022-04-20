@@ -20,6 +20,7 @@ default_transact_fn = os.path.abspath(os.path.join(
 def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
     logger.info(f"Opening articles dataset")
     articles_bytes_cols = [
+            "article_id",
             "prod_name",
             "product_type_name",
             "product_group_name",
@@ -36,14 +37,14 @@ def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
             ]
     articles_ds = pd.read_csv(articles_fn)
     articles_ds["article_id"] = (articles_ds["article_id"]
-            .apply(lambda x: f"{x:010d}")
-            .str.encode("utf-8"))
+            .apply(lambda x: f"{x:010d}"))
     for col in articles_bytes_cols:
         articles_ds[col] = (
             articles_ds[col]
                 .fillna(unk)
                 .str.casefold()
                 .str.encode("utf-8"))
+    articles_ds = articles_ds.set_index("article_id")
     return articles_ds
 
 def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
@@ -68,6 +69,7 @@ def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
     customers_ds.loc[idx, "age_mask"] = 1.0
     customers_ds.loc[~idx, "age_mask"] = 0.0
     customers_ds["age"] = customers_ds["age"].fillna(0.0)
+    customers_ds.set_index("customer_id", inplace=True)
     return customers_ds
 
 def append_previous_purchases(
@@ -83,8 +85,7 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [article_id]
                     .shift(n)
-                    .fillna(0)
-                    .astype(int))
+                    .fillna(b""))
         transaction_ds[f"{price}_{n}"] = (
                 transaction_ds
                     .groupby("customer_id")
@@ -95,8 +96,7 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [sales_channel_id]
                     .shift(n)
-                    .fillna(0)
-                    .astype(int))
+                    .fillna(b"0"))
     for n in range(1, window + 1):
         transaction_ds[f"{price}_{n}_mask"] = (
             pd.notnull(transaction_ds[f"{price}_{n}"]))
@@ -105,7 +105,6 @@ def append_previous_purchases(
     return transaction_ds
 
 def load_transactions_ds(
-        vocabulary,
         skiprows: int,
         transactions_fn: str=default_transact_fn,
         nrows: int=1_000_000,
@@ -121,25 +120,16 @@ def load_transactions_ds(
             skiprows=skiprows + 1,
             names=names,
             nrows=nrows,)
-    article_id_map = {x: i + 1
-            for i, x in enumerate(vocabulary["article_id"])}
-    customer_id_map = {x: i
-            for i, x in enumerate(vocabulary["customer_id"])}
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{int(x):010d}")
-                .str.encode("utf-8")
-                .apply(lambda x: article_id_map[x])
-                .astype(int))
+                .str.encode("utf-8"))
     transactions_ds["t_dat"] = transactions_ds["t_dat"].str.encode("utf-8")
     transactions_ds["customer_id"] = (
-            transactions_ds["customer_id"]
-                .str.encode("utf-8")
-                .apply(lambda x: customer_id_map[x])
-                .astype(int))
+            transactions_ds["customer_id"].str.encode("utf-8"))
     transactions_ds["sales_channel_id"] = (
             transactions_ds["sales_channel_id"]
-                .fillna(0).astype(int))
+                .apply(lambda x: str(x).encode("utf-8")))
     transactions_ds = append_previous_purchases(transactions_ds)
     return transactions_ds
 
@@ -151,7 +141,7 @@ def write_vocabulary(
     """
     if not os.path.exists(parent_dir):
         os.mkdir(parent_dir)
-    article_ids = articles_ds["article_id"].unique().tolist()
+    article_ids = articles_ds.index.unique().tolist()
     product_name = articles_ds["prod_name"].unique().tolist()
     garment_voc = articles_ds["garment_group_name"].unique().tolist()
     section_voc = articles_ds["section_name"].unique().tolist()
@@ -171,9 +161,9 @@ def write_vocabulary(
     club_member_voc = customers_ds["club_member_status"].unique().tolist()
     fashion_news_voc = (customers_ds["fashion_news_frequency"]
             .unique().tolist())
-    customer_id = customers_ds["customer_id"].tolist()
+    customer_id = customers_ds.index.tolist()
     pairs = [
-        (customer_id, "customer_id.txt"),
+        (article_ids, "article_ids.txt"),
         (product_name, "product_name.txt"),
         (garment_voc, "garments.txt"),
         (section_voc, "sections.txt"),
@@ -188,7 +178,7 @@ def write_vocabulary(
         (product_type_voc, "product_type_names.txt"),
         (club_member_voc, "club_member_statuses.txt"),
         (fashion_news_voc, "fashion_news.txt"),
-        (article_ids, "article_ids.txt")
+        (customer_id, "customer_id.txt"),
     ]
     for lst, bn in pairs:
         fn = os.path.join(parent_dir, bn)
@@ -230,8 +220,7 @@ def vectorize_features(
         customers_ds: pd.DataFrame,
         vocabulary: Dict[str, List[str]],
         ) -> Tuple[pd.DataFrame]:
-    cols = [
-            "garment_group_name",
+    cols = ["garment_group_name",
             "section_name",
             "index_name",
             "index_group_name",
@@ -247,14 +236,7 @@ def vectorize_features(
         articles_ds[col] = (
             articles_ds[col]
             .apply(lambda x: dct[x]))
-    for col in ["article_id"]:
-        dct = {x: i + 1 for i, x in enumerate(vocabulary[col])}
-        articles_ds[col] = (
-            articles_ds[col]
-            .apply(lambda x: dct[x]))
-    cols = [
-            "customer_id",
-            "club_member_status",
+    cols = ["club_member_status",
             "fashion_news_frequency"]
     for col in cols:
         dct = {x: i for i, x in enumerate(vocabulary[col])}
@@ -262,3 +244,4 @@ def vectorize_features(
             customers_ds[col]
             .apply(lambda x: dct[x]))
     return articles_ds, customers_ds
+
