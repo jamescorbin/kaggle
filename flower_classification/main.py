@@ -4,6 +4,7 @@ kaggle competitions download -c tpu-getting-started
 import sys
 import os
 import math
+import json
 import pandas as pd
 import tensorflow as tf
 import numpy as np
@@ -66,138 +67,71 @@ def cast_image_float(image: tf.Tensor) -> tf.Tensor:
                 TWO_FIVE_FIVE)
     return image
 
-def get_dataset(dim: int,
-                repeat: Optional[int],
-                buffer_size: Optional[int],
-                batch_size: Optional[int],
-                train_test: str="train",
-                apply_transformation: bool=False,
-                top_dir: str=os.path.join(os.getcwd(), "data"),
-                ) -> tf.data.Dataset:
+def get_training_dataset(
+        config: Dict[str, Any],
+        top_dir: str=os.path.join(os.getcwd(), "data"),
+        ) -> tf.data.Dataset:
     if not os.path.exists(top_dir):
         from kaggle_datasets import KaggleDatasets
         top_dir=KaggleDatasets().get_gcs_path("tpu-getting-started")
     dirname = lambda x: f"tfrecords-jpeg-{x}x{x}"
     tf_recs = tf.io.gfile.glob(f"{top_dir}/"
                                f"{dirname(dim)}/"
-                               f"{train_test}/*.tfrec")
-    if train_test in ("train", "val"):
-        read_f = lambda x: read_tfrecord(x,
-                                         dim=dim,
-                                         labeled=True,)
-    else:
-        read_f = lambda x: read_tfrecord(x,
-                                         dim=dim,
-                                         labeled=False,)
+                               "(train|valid)/"
+                               "*.tfrec")
+    read_f = lambda x: read_tfrecord(x,
+            dim=dim,
+            labeled=True,)
+    x_ds = tf.data.TFRecordDataset(tf_recs).map(read_f)
+    x_ds = tf.data.Dataset.zip((
+        x_ds.map(lambda x: {"image": x["image"], "id": x["id"]}),
+        x_ds.map(lambda x: {"class": x["class"]})))
+    x_train = (x_ds
+            .enumerate()
+            .filter(lambda x, y:
+                    x % config["split_mod_k"] <= config["train_k"])
+            .map(lambda x, y: y))
+    x_valid = (x_ds
+            .enumerate()
+            .filter(lambda x, y:
+                    (x % config["split_mod_k"] > config["train_k"])
+                    & (x % config["split_mod_k"] <= config["valid_k"]))
+            .map(lambda x, y: y))
+    x_test = (x_ds
+            .enumerate()
+            .filter(lambda x, y:
+                    x % config["split_mod_k"] > config["valid_k"])
+            .map(lambda x, y: y))
+    return x_train, x_valid, x_test
+
+def augment_train(x_train: tf.data.Dataset,
+                  batch_size: int,
+                  config) -> tf.data.Dataset:
+    x_train = x_train.repeat(config["repeat"])
+    x_train = x_train.shuffle(config["shuffle"])
+    x_train = x_train.batch(batch_size, drop_remainder=True)
+    x_train.apply(lambda x, y:
+                  x: {"image": transform(x["image"]),
+                      "id": x["id"]},
+                  y)
+    return x_train
+
+def get_prediction_dataset(
+        config: Dict[str, Any],
+        top_dir: str=os.path.join(os.getcwd(), "data"),
+        ) -> tf.data.Dataset:
+    if not os.path.exists(top_dir):
+        from kaggle_datasets import KaggleDatasets
+        top_dir=KaggleDatasets().get_gcs_path("tpu-getting-started")
+    dirname = lambda x: f"tfrecords-jpeg-{x}x{x}"
+    tf_recs = tf.io.gfile.glob(f"{top_dir}/"
+                               f"{dirname(dim)}/"
+                               f"{test}/*.tfrec")
+    read_f = lambda x: read_tfrecord(x,
+            dim=dim,
+            labeled=False,)
     ds = tf.data.TFRecordDataset(tf_recs).map(read_f)
-    if repeat is not None:
-        ds = ds.repeat(repeat)
-    if train_test in ("train", "val"):
-        if apply_transformation:
-            xds = ds.map(lambda x: {
-                "image": transform(x["image"]),
-                "id": x["id"]})
-        else:
-            xds = ds.map(lambda x: {
-                "image": x["image"],
-                    "id": x["id"]})
-        yds = ds.map(lambda x: {"class": x["class"]})
-        ds = tf.data.Dataset.zip((xds, yds))
-    if buffer_size is not None:
-        ds = ds.shuffle(buffer_size=buffer_size)
-    if batch_size is not None:
-        drop_remainder = True if train_test != "test" else False
-        ds = ds.batch(batch_size, drop_remainder=True)
-        ds = ds.prefetch(buffer_size=batch_size)
     return ds
-
-class FlowerModel(tf.keras.Model):
-    def __init__(self,
-                 image_shape: Tuple[int, int],
-                 classes: int,
-                 **kwargs
-                 ):
-        super().__init__(**kwargs)
-        imagey, imagex, _ = image_shape
-        #from tensorflow.keras.applications import DenseNet201
-        from tensorflow.keras.applications import Xception
-        #self.rnet = DenseNet201(
-        #        input_shape=(imagey, imagex, 3),
-        #        weights="imagenet",
-        #        include_top=False,)
-        self.rnet = Xception(
-                input_shape=(imagey, imagex, 3),
-                weights="imagenet",
-                include_top=False,)
-        self.rnet.trainable = False
-        self.pooling = tf.keras.layers.GlobalAveragePooling2D(
-                name="pooling")
-        self.flat = tf.keras.layers.Flatten(
-                name="flatten_pooling")
-        self.dense_hidden = tf.keras.layers.Dense(
-                units=4000,
-                activation="relu",
-                name="dense_hidden")
-        self.dropout = tf.keras.layers.Dropout(
-                0.25,
-                name="dropout_layer")
-        self.out_layer = tf.keras.layers.Dense(
-                classes,
-                activation="softmax",
-                dtype=tf.float32,
-                name="flower_class")
-        loss = tf.keras.losses.SparseCategoricalCrossentropy()
-        metric = tf.keras.metrics.SparseCategoricalAccuracy()
-        opt = tf.keras.optimizers.Adam(
-                learning_rate=1e-3)
-        self.compile(
-                optimizer=opt,
-                loss={"class": loss,
-                      "label": None,
-                      "id": None},
-                metrics={"class": [metric]})
-
-    def set_trainable_recompile(self):
-        self.rnet.trainable = True
-        loss = tf.keras.losses.SparseCategoricalCrossentropy()
-        metric = tf.keras.metrics.SparseCategoricalAccuracy()
-        opt = tf.keras.optimizers.Adam(
-                learning_rate=1e-5)
-        self.compile(
-                optimizer=opt,
-                loss={"class": loss,
-                      "label": None,
-                      "id": None},
-                metrics={"class": [metric]})
-
-    def call(self, inputs):
-        x = inputs["image"]
-        x = self.rnet(x)
-        x = self.pooling(x)
-        x = self.flat(x)
-        x = self.dense_hidden(x)
-        x = self.dropout(x)
-        x = self.out_layer(x)
-        label = tf.reshape(
-                tf.math.top_k(x, k=1).indices,
-                shape=[-1])
-        outputs = {"class": x,
-                   "label": label,
-                   "id": inputs["id"]}
-        return outputs
-
-def get_model(
-              imagey: int,
-              imagex: int,
-              classes: int,
-              seed: int=50,
-              ) -> tf.keras.Model:
-    tf.random.set_seed(seed)
-    model = FlowerModel(
-             image_shape=(imagey, imagex, 3),
-             classes=classes,
-            name="flower_model")
-    return model
 
 def test_image_transform() -> None:
     import matplotlib.pyplot as plt
@@ -223,56 +157,82 @@ def test_image_transform() -> None:
 
 def main(
         batch_size: int=256,
-        epochs_init: int=3,
-        epochs_tune: int=5,
         repeat: int=3,
         buffer_size: int=10):
     # It's important to recompile your model after you make any changes
     # to the `trainable` attribute of any inner layer, so that your changes
     # are take into account
+    config_fn = "./cofing-model.json"
+    with open(config_fn, "r") as f:
+        config = json.load(f)
     print(f"TF version: {tf.__version__}")
-    classes = 104
+    tf.random.set_seed(config["seed"])
     tpu, strategy = get_strategy()
     on_tpu = True if tpu else False
     print(f"TPU: {tpu}")
     print(f"Strategy: {strategy}")
-    dims = [192, 224, 331, 512]
-    dim = dims[1]
+    dim = config["image_shape"][0]
     print(f"Image dimension: {dim}")
-    print(f"Epochs initial: {epochs_init}")
-    print(f"Epochs tuning: {epochs_tune}")
-    batch_size = batch_size * strategy.num_replicas_in_sync
+    print(f"Epochs initial: {config['epochs_init']}")
+    print(f"Epochs tuning: {config['epochs_tune']}")
+    batch_size = config["batch_size"] * strategy.num_replicas_in_sync
     with strategy.scope():
-        ds_train = get_dataset(dim,
-                    repeat=repeat,
-                    buffer_size=buffer_size,
-                    batch_size=batch_size,
-                    apply_transformation=True,
-                    train_test="train",)
-        ds_valid = get_dataset(
-                    dim,
-                    repeat=None,
-                    buffer_size=None,
-                    batch_size=batch_size,
-                    apply_transformation=False,
-                    train_test="val",)
-        model = get_model(
-                    imagey=dim,
-                    imagex=dim,
-                    classes=classes,)
+        x_train, x_valid, x_test = get_training_dataset(config)
+        x_train = augment_train(x_train, batch_size, config=config)
+        tfboard = tf.keras.callbacks.TensorBoard(
+                log_dir=tfboard_log_dir,
+                histogram_freq=1,
+                write_graph=True,
+                write_images=True,
+                write_steps_per_second=False,
+                update_freq="epoch",
+                profile_batch=0,
+                embeddings_freq=1,
+                embeddings_metadata=None,)
+        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
+                model_save_pt,
+                monitor="val_loss",
+                verbose=0,
+                save_best_only=True,
+                save_weights_only=True,
+                mode="auto",
+                save_freq="epoch",
+                options=None,
+                initial_value_threshold=None,)
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss",
+                min_delta=0,
+                patience=0,
+                verbose=0,
+                mode="auto",
+                baseline=None,
+                restore_best_weights=True)
+        callbacks = [tfboard, model_checkpoint, early_stopping]
+        model = FlowerModel(
+                config=config,
+                name="flower_model")
         print("Initial training: DenseNet not trainable")
-        hist0 = model.fit(ds_train,
-                    validation_data=ds_valid,
-                    epochs=epochs_init)
+        hist0 = model.fit(
+                ds_train,
+                validation_data=x_valid.batch(batch_size),
+                callbacks=callbacks,
+                epochs=config["epochs_init"])
         print("Fine-tuning training: DenseNet trainable")
         model.set_trainable_recompile()
-        early_stopping = tf.keras.callbacks.EarlyStopping(
-                    monitor="val_loss",
-                    patience=2)
-        hist1 = model.fit(ds_train,
-                    validation_data=ds_valid,
-                    epochs=epochs_tune,
-                    callbacks=[early_stopping])
+        hist1 = model.fit(
+                ds_train,
+                validation_data=ds_valid.batch(batch_size),
+                epochs=config["epochs_tune"],
+                callbacks=[early_stopping])
+        model.evaluate(
+                x_train.batch(batch_size),
+                callbacks=callbacks)
+        model.evaluate(
+                x_valid.batch(batch_size),
+                callbacks=callbacks)
+        model.evaluate(
+                x_test.batch(batch_size),
+                callbacks=callbacks)
     ds_test = get_dataset(
                     dim,
                     repeat=None,
@@ -289,7 +249,6 @@ def main(
     return model, (hist0, hist1), prediction
 
 if __name__=="__main__":
-    #test_image_transform()
     model, history, prediction = main(
             batch_size=64,
             epochs_init=2,

@@ -1,3 +1,6 @@
 data
 tfrec
 vocabulary
+tfboard
+*.hdf5
+__pycache__
