@@ -10,12 +10,12 @@ sys.path.insert(1, pt)
 import rawdata
 import serialize
 
-def _make_hash_tables(
+def _make_lookup_pairs(
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
-        ) -> pd.DataFrame:
-    article_id = tf.constant(articles_ds["article_id"].values)
-    customer_id = tf.constant(customers_ds["customer_id"].values)
+        ) -> Dict[str, Tuple[Any, Any]]:
+    article_id = articles_ds["article_id"].values.tolist()
+    customer_id = customers_ds["customer_id"].values.tolist()
     article_columns = [
             "product_group_name",
             "graphical_appearance_name",
@@ -30,33 +30,21 @@ def _make_hash_tables(
             #"garment_group_name",
             #"detail_desc",
             ]
+    customer_columns = ["club_member_status",
+                     "fashion_news_frequency",
+                     "age"]
     lookups = {
-        col: tf.lookup.StaticHashTable(
-            tf.lookup.KeyValueTensorInitializer(
-                    article_id,
-                    tf.constant(articles_ds[col].values)),
-            default_value=0)
+        col: list(zip(article_id, articles_ds[col].values.tolist()))
         for col in article_columns}
     lookups.update({
-        col: tf.lookup.StaticHashTable(
-            tf.lookup.KeyValueTensorInitializer(
-                    customer_id,
-                    tf.constant(customers_ds[col].values)),
-            default_value=0)
-        for col in ["club_member_status", "fashion_news_frequency"]})
-    lookups["age"] = (
-            tf.lookup.StaticHashTable(
-                tf.lookup.KeyValueTensorInitializer(
-                        customer_id,
-                        tf.constant(customers_ds["age"].values)),
-                default_value=0.0))
+        col: list(zip(customer_id, customers_ds[col].values.tolist()))
+        for col in customer_columns})
     return lookups
 
 def make_articles_tf(
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
         ) -> Tuple[Dict[str, "StaticHashTable"], tf.data.Dataset]:
-    lookups = _make_hash_tables(articles_ds, customers_ds)
     articles_tf = tf.data.Dataset.from_tensor_slices(
         {
             "article_id": articles_ds["article_id"].values,
@@ -85,7 +73,7 @@ def make_articles_tf(
             #"detail_desc":
             #    articles_ds["detail_desc"].values,
         })
-    return lookups, articles_tf
+    return articles_tf
 
 def make_tfds(
         tfrec_dir: str,

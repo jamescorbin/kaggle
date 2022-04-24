@@ -42,14 +42,14 @@ def main():
     model_save_pt = "model.hdf5"
     transactions_parquet = "./data/transactions.parquet"
     ts_len = 4
-    serialize.run_serialization(
-            articles_fn,
-            customers_fn,
-            transactions_fn,
-            tfrec_dir,
-            vocab_dir,
-            transactions_parquet=transactions_parquet,
-            ts_len=ts_len)
+    #serialize.run_serialization(
+    #        articles_fn,
+    #        customers_fn,
+    #        transactions_fn,
+    #        tfrec_dir,
+    #        vocab_dir,
+    #        transactions_parquet=transactions_parquet,
+    #        ts_len=ts_len)
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
@@ -108,21 +108,23 @@ def main():
         model.fit(
                 xtrain
                     .batch(config["batch_size"], drop_remainder=True)
+                    .take(10)
                     .prefetch(tf.data.AUTOTUNE),
                 validation_data=xvalid
                     .batch(config["batch_size"])
+                    .take(10)
                     .prefetch(tf.data.AUTOTUNE),
                 epochs=config["epochs"],
                 callbacks=callbacks)
-        model.evaluate(
-                xtrain.batch(config["batch_size"]),
-                callbacks=callbacks)
-        model.evaluate(
-                xvalid.batch(config["batch_size"]),
-                callbacks=callbacks)
-        model.evaluate(
-                xtest.batch(config["batch_size"]),
-                callbacks=callbacks)
+        #model.evaluate(
+        #        xtrain.batch(config["batch_size"]),
+        #        callbacks=callbacks)
+        #model.evaluate(
+        #        xvalid.batch(config["batch_size"]),
+        #        callbacks=callbacks)
+        #model.evaluate(
+        #        xtest.batch(config["batch_size"]),
+        #        callbacks=callbacks)
     test_data = rawdata.get_test_data(
             pd.read_parquet(transactions_parquet),
             ts_len=ts_len)
@@ -136,6 +138,9 @@ def main():
     for title in titles:
         prediction.append(np.array(title))
     prediction = pd.DataFrame(np.concatenate(prediction, axis=0))
+    prediction.rename(
+            {x: str(x) for x in prediction.columns},
+            axis=1, inplace=True)
     prediction.to_parquet("prediction.parquet")
 
 if __name__=="__main__":

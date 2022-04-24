@@ -27,11 +27,19 @@ class CustomerModel(tf.keras.Model):
 class ArticleModel(tf.keras.Model):
     def __init__(self,
                  vocabulary,
-                 lookups,
+                 lookup_pairs,
                  config: Dict[str, Any], **kwargs):
         super().__init__(**kwargs)
         output_type = "one_hot"
-        self.lookups = lookups
+        self.vocabulary = vocabulary
+        self.lookup_pairs = lookup_pairs
+        self.section_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    zip(*lookup_pairs["section_name_lookup"])))
+        self.product_group_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    zip(*lookup_pairs["product_group_name"])))
+        self.graphical
         self.emb = tf.keras.layers.Embedding(
                 len(vocabulary["article_id"]) + 1,
                 config["article_embedding_dim"])
@@ -64,10 +72,10 @@ class ArticleModel(tf.keras.Model):
     def call(self, inputs):
         x = inputs["article_id"]
         x = self.emb(x)
-        xsection = self.lookups["section_name"].lookup(
+        xsection = self.secion_name_lookup.lookup(
                 inputs["article_id"])
         xsection = self.section_encoder(xsection)
-        xgroup = self.lookups["product_group_name"].lookup(
+        xgroup = self.product_group_name_lookup.lookup(
                 inputs["article_id"])
         xgroup = self.group_encoder(xgroup)
         xgraphical = self.lookups["graphical_appearance_name"].lookup(
@@ -87,6 +95,11 @@ class ArticleModel(tf.keras.Model):
         x = self.batch_norm(x)
         x = self.dense0(x)
         return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"vocabulary": self.vocabulary,})
+        return confgi
 
 class SequentialQueryModel(tf.keras.Model):
     def __init__(self,
@@ -188,8 +201,9 @@ class RetrievalModel(tfrs.Model):
     def __init__(self,
                  vocabulary,
                  articles_ds,
-                 lookups,
-                 config, **kwargs):
+                 lookups: Dict[str, List[Any]],
+                 config: Dict[str, List[Any]],
+                 **kwargs):
         super().__init__(**kwargs)
         self.customer_model = SequentialQueryModel(
                 vocabulary,
