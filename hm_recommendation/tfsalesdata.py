@@ -10,41 +10,9 @@ sys.path.insert(1, pt)
 import rawdata
 import serialize
 
-def _make_lookup_pairs(
-        articles_ds: pd.DataFrame,
-        customers_ds: pd.DataFrame,
-        ) -> Dict[str, Tuple[Any, Any]]:
-    article_id = articles_ds["article_id"].values.tolist()
-    customer_id = customers_ds["customer_id"].values.tolist()
-    article_columns = [
-            "product_group_name",
-            "graphical_appearance_name",
-            "perceived_colour_master_name",
-            "section_name",
-            #"product_type_name",
-            #"colour_group_name",
-            #"perceived_colour_value_name",
-            #"department_name",
-            #"index_name",
-            #"index_group_name",
-            #"garment_group_name",
-            #"detail_desc",
-            ]
-    customer_columns = ["club_member_status",
-                     "fashion_news_frequency",
-                     "age"]
-    lookups = {
-        col: list(zip(article_id, articles_ds[col].values.tolist()))
-        for col in article_columns}
-    lookups.update({
-        col: list(zip(customer_id, customers_ds[col].values.tolist()))
-        for col in customer_columns})
-    return lookups
-
 def make_articles_tf(
         articles_ds: pd.DataFrame,
-        customers_ds: pd.DataFrame,
-        ) -> Tuple[Dict[str, "StaticHashTable"], tf.data.Dataset]:
+        ) -> Dict[str, Tuple[Any, Any]:
     articles_tf = tf.data.Dataset.from_tensor_slices(
         {
             "article_id": articles_ds["article_id"].values,

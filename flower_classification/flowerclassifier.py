@@ -5,7 +5,6 @@ from typing import Dict, Any, Tuple
 class FlowerModel(tf.keras.Model):
     def __init__(self,
                  config: Dict[str, Any],
-                 classes: int,
                  **kwargs
                  ):
         super().__init__(**kwargs)
@@ -76,3 +75,9 @@ class FlowerModel(tf.keras.Model):
                    "label": label,
                    "id": inputs["id"]}
         return outputs
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "config": self.config,})
+        return config

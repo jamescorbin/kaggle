@@ -86,21 +86,22 @@ def get_training_dataset(
     x_ds = tf.data.Dataset.zip((
         x_ds.map(lambda x: {"image": x["image"], "id": x["id"]}),
         x_ds.map(lambda x: {"class": x["class"]})))
+    _g1 = lambda x, y: x % config["split_mod_k"] <= config["train_k"]
+    _g2 = (lambda x, y:
+                    (x % config["split_mod_k"] > config["train_k"])
+                    & (x % config["split_mod_k"] <= config["valid_k"]))
+    _g3 = lambda x, y: x % config["split_mod_k"] > config["valid_k"]
     x_train = (x_ds
             .enumerate()
-            .filter(lambda x, y:
-                    x % config["split_mod_k"] <= config["train_k"])
+            .filter(_g1)
             .map(lambda x, y: y))
     x_valid = (x_ds
             .enumerate()
-            .filter(lambda x, y:
-                    (x % config["split_mod_k"] > config["train_k"])
-                    & (x % config["split_mod_k"] <= config["valid_k"]))
+            .filter(_g2)
             .map(lambda x, y: y))
     x_test = (x_ds
             .enumerate()
-            .filter(lambda x, y:
-                    x % config["split_mod_k"] > config["valid_k"])
+            .filter(_g3)
             .map(lambda x, y: y))
     return x_train, x_valid, x_test
 

@@ -24,23 +24,47 @@ class CustomerModel(tf.keras.Model):
         x = self.flatten(x)
         return x
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({"vocabulary": self.vocabulary,
+                       "lookups": self.lookups,
+                        "config": self.config,
+                       })
+        return config
+
 class ArticleModel(tf.keras.Model):
     def __init__(self,
                  vocabulary,
-                 lookup_pairs,
-                 config: Dict[str, Any], **kwargs):
+                 lookups,
+                 config: Dict[str, Any],
+                 **kwargs):
         super().__init__(**kwargs)
         output_type = "one_hot"
         self.vocabulary = vocabulary
-        self.lookup_pairs = lookup_pairs
+        self.lookups = lookups
+        self.config = config
         self.section_name_lookup = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
-                    zip(*lookup_pairs["section_name_lookup"])))
+                    tf.constant(lookup_pairs["section_name_lookup"][0]),
+                    tf.constant(lookup_pairs["section_name_lookup"][1])),
+                default_value=0)
         self.product_group_name_lookup = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
-                    zip(*lookup_pairs["product_group_name"])))
-        self.graphical
+                    tf.constant(lookup_pairs["product_group_name"][0]),
+                    tf.constnat(lookup_pairs["product_group_name"][1])),
+                default_value=0)
+        self.graphical_appearance_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["graphical_appearance_name"][0]),
+                    tf.constant(lookup_pairs["graphical_appearance_name"][1])),
+                default_value=0)
+        self.perceived_colour_master_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["perceived_colour_master_name"][0]),
+                    tf.constant(lookup_pairs["perceived_colour_master_name"][1])),
+                default_value=0)
         self.emb = tf.keras.layers.Embedding(
+        self.perceived_colour_master_name_lookup = tf.lookup.StaticHashTable(
                 len(vocabulary["article_id"]) + 1,
                 config["article_embedding_dim"])
         self.flatten = tf.keras.layers.Flatten()
@@ -78,10 +102,10 @@ class ArticleModel(tf.keras.Model):
         xgroup = self.product_group_name_lookup.lookup(
                 inputs["article_id"])
         xgroup = self.group_encoder(xgroup)
-        xgraphical = self.lookups["graphical_appearance_name"].lookup(
+        xgraphical = self.graphical_appearance_name_lookup.lookup(
                 inputs["article_id"])
         xgraphical = self.graphical_encoder(xgraphical)
-        xcolourmaster = self.lookups["perceived_colour_master_name"].lookup(
+        xcolourmaster = self.perceived_colour_master_name_lookup.lookup(
                 inputs["article_id"])
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
         x = self.cat([
@@ -98,8 +122,11 @@ class ArticleModel(tf.keras.Model):
 
     def get_config(self):
         config = super().get_config()
-        config.update({"vocabulary": self.vocabulary,})
-        return confgi
+        config.update({"vocabulary": self.vocabulary,
+                       "lookups": self.lookups,
+                        "config": self.config,
+                       })
+        return config
 
 class SequentialQueryModel(tf.keras.Model):
     def __init__(self,
@@ -109,6 +136,36 @@ class SequentialQueryModel(tf.keras.Model):
                  **kwargs):
         super().__init__(**kwargs)
         self.lookups = lookups
+        self.section_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["section_name_lookup"][0]),
+                    tf.constant(lookup_pairs["section_name_lookup"][1])),
+                default_value=0)
+        self.product_group_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["product_group_name"][0]),
+                    tf.constnat(lookup_pairs["product_group_name"][1])),
+                default_value=0)
+        self.graphical_appearance_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["graphical_appearance_name"][0]),
+                    tf.constant(lookup_pairs["graphical_appearance_name"][1])),
+                default_value=0)
+        self.perceived_colour_master_name_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["perceived_colour_master_name"][0]),
+                    tf.constant(lookup_pairs["perceived_colour_master_name"][1])),
+                default_value=0)
+        self.club_member_status_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["club_member_status"][0]),
+                    tf.constant(lookup_pairs["club_member_status"][1])),
+                default_value=0)
+        self.fashion_news_frequency_lookup = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(lookup_pairs["fashion_news_frequency"][0]),
+                    tf.constant(lookup_pairs["fashion_news_frequency"][1])),
+                default_value=0)
         self.price_norm = tf.keras.layers.Normalization(
                 mean=config["price_mean"],
                 variance=config["price_var"],
@@ -162,13 +219,13 @@ class SequentialQueryModel(tf.keras.Model):
     def call(self, inputs):
         x = inputs["article_id_hist"]
         x = self.emb(x)
-        xgroup = self.lookups["product_group_name"].lookup(
+        xgroup = selfproduct_group_name_lookup.lookup(
                 inputs["article_id_hist"])
         xgroup = self.group_encoder(xgroup)
-        xgraphical = self.lookups["graphical_appearance_name"].lookup(
+        xgraphical = self.graphical_appearance_name_lookup.lookup(
                 inputs["article_id_hist"])
         xgraphical = self.graphical_encoder(xgraphical)
-        xcolourmaster = self.lookups["perceived_colour_master_name"].lookup(
+        xcolourmaster = self.perceived_colour_master_name_lookup.lookup(
                 inputs["article_id_hist"])
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
         #xprice = inputs["price"]
@@ -184,11 +241,11 @@ class SequentialQueryModel(tf.keras.Model):
             ])
         x = self.batch_norm0(x)
         x = self.gru(x)
-        xclub = self.lookups["club_member_status"].lookup(
+        xclub = self.club_member_status_lookup.lookup(
                 inputs["customer_id"])
         xclub = self.club_encoder(xclub)
         xclub = self.flatten(xclub)
-        xnews = self.lookups["fashion_news_frequency"].lookup(
+        xnews = self.fashion_news_frequency_lookup.lookup(
                 inputs["customer_id"])
         xnews = self.news_encoder(xnews)
         xnews = self.flatten(xnews)
@@ -196,6 +253,14 @@ class SequentialQueryModel(tf.keras.Model):
         x = self.batch_norm1(x)
         x = self.dense0(x)
         return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"vocabulary": self.vocabulary,
+                       "lookups": self.lookups,
+                        "config": self.config,
+                       })
+        return config
 
 class RetrievalModel(tfrs.Model):
     def __init__(self,

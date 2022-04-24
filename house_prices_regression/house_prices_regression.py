@@ -41,150 +41,9 @@ SEED = 0
 np.random.seed(seed=SEED)
 logger.info(f"Random seed: {SEED}.")
 
-cat_feats = [
-    "MSSubClass",
-    "MSZoning",
-    "Street",
-    "Alley",
-    "LotShape",
-    "LandContour",
-    "Utilities",
-    "LotConfig",
-    "LandSlope",
-    "Neighborhood",
-    "Condition1",
-    "Condition2",
-    "BldgType",
-    "HouseStyle",
-    "RoofStyle",
-    "RoofMatl",
-    "Exterior1st",
-    "Exterior2nd",
-    "MasVnrType",
-    "ExterQual",
-    "ExterCond",
-    "Foundation",
-    "BsmtQual",
-    "BsmtCond",
-    "BsmtExposure",
-    "BsmtFinType1",
-    "BsmtFinType2",
-    "Heating",
-    "HeatingQC",
-    "CentralAir",
-    "Electrical",
-    "KitchenQual",
-    "Functional",
-    "FireplaceQu",
-    "GarageType",
-    "GarageFinish",
-    "GarageQual",
-    "GarageCond",
-    "PavedDrive",
-    "PoolQC",
-    "Fence",
-    "MiscFeature",
-    "SaleType",
-    "SaleCondition",]
-
-cont_feats = [
-    "LotFrontage",
-    "LotArea",
-    "OverallQual",
-    "OverallCond",
-    "YearBuilt",
-    "YearRemodAdd",
-    "MasVnrArea",
-    "BsmtFinSF1",
-    "BsmtFinSF2",
-    "BsmtUnfSF",
-    "TotalBsmtSF",
-    "1stFlrSF",
-    "2ndFlrSF",
-    "HalfBath",
-    "LowQualFinSF",
-    "GrLivArea",
-    "BsmtFullBath",
-    "BsmtHalfBath",
-    "FullBath",
-    "BedroomAbvGr",
-    "KitchenAbvGr",
-    "TotRmsAbvGrd",
-    "Fireplaces",
-    "GarageYrBlt",
-    "GarageCars",
-    "GarageArea",
-    "WoodDeckSF",
-    "OpenPorchSF",
-    "EnclosedPorch",
-    "3SsnPorch",
-    "ScreenPorch",
-    "PoolArea",
-    "MiscVal",
-    "MoSold",
-    "YrSold",]
-
-default_train_fn = os.path.abspath(os.path.join(
-        __file__, os.pardir, os.pardir, "data",
-        "train.csv"))
-default_test_fn = os.path.abspath(os.path.join(
-        __file__, os.pardir, os.pardir, "data",
-        "test.csv"))
 default_results_fn = os.path.abspath(os.path.join(
         __file__, os.pardir, os.pardir, "data",
         "results.csv"))
-
-def load_data(train_fn: str=default_train_fn,
-              test_fn: str=default_test_fn,
-              ) -> Tuple[pd.DataFrame]:
-    df_train = pd.read_csv(train_fn)
-    df_test = pd.read_csv(test_fn)
-    df_train = pd.DataFrame(
-            df_train.loc[pd.notnull(df_train["SalePrice"])])
-    id_train = df_train["Id"]
-    id_test = df_test["Id"]
-    y_train = df_train[["SalePrice"]]
-    df_train.drop("Id", axis=1, inplace=True)
-    df_test.drop("Id", axis=1, inplace=True)
-    df_train.drop("SalePrice", axis=1, inplace=True)
-    return df_train, y_train, id_train, df_test, id_test
-
-def encode_categorical(
-        df_train: pd.DataFrame,
-        ) -> Tuple[pd.DataFrame, sklpre.OrdinalEncoder]:
-    cat_map = sklpre.OrdinalEncoder(
-                handle_unknown="use_encoded_value",
-                unknown_value=-1)
-    df_train[cat_feats] = (cat_map
-                           .fit_transform(df_train[cat_feats]))
-    df_train[cat_feats] = df_train[cat_feats].fillna(-1).astype(int)
-    return df_train, cat_map
-
-def scale_continuous(df_train: pd.DataFrame,
-                     ) -> Tuple[pd.DataFrame, sklpre.StandardScaler]:
-    std_scl = sklpre.StandardScaler()
-    df_train[cont_feats] = std_scl.fit_transform(df_train[cont_feats])
-    df_train[cont_feats] = df_train[cont_feats].fillna(0)
-    return df_train, std_scl
-
-def encode_onehot(df_train: pd.DataFrame,
-                  ) -> Tuple[pd.DataFrame, sklpre.OneHotEncoder]:
-    one_enc = sklpre.OneHotEncoder(sparse=False,
-                                   handle_unknown="ignore")
-    df_aux = pd.DataFrame(
-        one_enc.fit_transform(df_train[cat_feats]),
-        index=df_train.index)
-    df_train.drop(cat_feats, axis=1, inplace=True)
-    df_train = df_train.join(df_aux)
-    return df_train, one_enc
-
-def transform_price(y_train: np.array,
-                    epsilon: float=1e-6,
-                    ) -> Tuple[np.array, sklpre.StandardScaler]:
-    prc_scl = sklpre.StandardScaler()
-    y_train = np.log(y_train + epsilon)
-    y_train = prc_scl.fit_transform(y_train)
-    return y_train, prc_scl
 
 def make_projectors(feat_dim: int,
                     ) -> List[Tuple[sklb.TransformerMixin, int]]:
@@ -400,21 +259,6 @@ def run_models(models: Dict[int, Tuple[sklpipe.Pipeline]],
     scores.sort_values(by=["test_mse"], ascending=True, inplace=True)
     return scores
 
-def transform(df: pd.DataFrame,
-              cat_map: sklpre.OrdinalEncoder,
-              std_scl: sklpre.StandardScaler,
-              one_enc: sklpre.OneHotEncoder) -> pd.DataFrame:
-    df[cat_feats] = cat_map.transform(df[cat_feats])
-    df[cat_feats] = df[cat_feats].fillna(-1).astype(int)
-    df[cont_feats] = std_scl.transform(df[cont_feats])
-    df[cont_feats] = df[cont_feats].fillna(0)
-    df_aux = pd.DataFrame(
-            one_enc.transform(df[cat_feats]),
-            index=df.index)
-    df.drop(cat_feats, axis=1, inplace=True)
-    df = df.join(df_aux)
-    return df
-
 def get_prediction(
         scores: pd.DataFrame,
         models: Dict[int, Tuple[sklpipe.Pipeline]],
@@ -431,15 +275,15 @@ def get_prediction(
 
 def main(outfn=default_results_fn):
     df_train, y_train, id_train, df_test, id_test = load_data()
-    df_train, cat_map = encode_categorical(df_train)
-    df_train, std_scl = scale_continuous(df_train)
-    df_train, one_enc = encode_onehot(df_train)
-    y_train, prc_scl = transform_price(y_train)
+    df_train, cat_map = preprocessing.encode_categorical(df_train)
+    df_train, std_scl = preprocessing.scale_continuous(df_train)
+    df_train, one_enc = preprocessing.encode_onehot(df_train)
+    y_train, prc_scl = preprocessing.transform_price(y_train)
     dim_feats = len(df_train.columns)
     projectors = make_projectors(dim_feats)
     models = make_pipelines(projectors)
     scores = run_models(models, df_train, y_train)
-    df_test = transform(df_test, cat_map, std_scl, one_enc)
+    df_test = preprocessing.transform(df_test, cat_map, std_scl, one_enc)
     results = get_prediction(scores, models, df_test, id_test, prc_scl)
     results.to_csv(outfn, index=False)
     return df_train, y_train, id_train, df_test, id_test, scores, results

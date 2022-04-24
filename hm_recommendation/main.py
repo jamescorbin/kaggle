@@ -5,6 +5,7 @@ To pull dataset:
 import sys
 import os
 import logging
+import json
 from typing import Dict, List, Tuple, Any
 import pandas as pd
 import numpy as np
@@ -30,8 +31,8 @@ logging.basicConfig(
 logger = logging.getLogger(name=__name__)
 
 def main():
-    import json
-    with open("./config-model.json", "r") as f:
+    config_fn = "./config-model.json"
+    with open(config_fn, "r") as f:
         config = json.load(f)
     vocab_dir = "vocabulary"
     tfrec_dir = "./tfrec"
@@ -42,6 +43,7 @@ def main():
     model_save_pt = "model.hdf5"
     transactions_parquet = "./data/transactions.parquet"
     ts_len = 4
+    #logger.info("Serializing dataset")
     #serialize.run_serialization(
     #        articles_fn,
     #        customers_fn,
@@ -53,14 +55,12 @@ def main():
     vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
-    logger.info("Serializing dataset")
     articles_ds, customers_ds = rawdata.vectorize_features(
             articles_ds,
             customers_ds,
             vocabulary)
-    lookups, articles_tf = tfsalesdata.make_articles_tf(
-            articles_ds,
-            customers_ds,)
+    lookups = rawdata.make_lookup_pairs(articles_ds, customers_ds)
+    articles_tf = tfsalesdata.make_articles_tf(articles_ds)
     del articles_ds
     del customers_ds
     strategy = tf.distribute.get_strategy()
@@ -91,7 +91,7 @@ def main():
                 monitor="val_loss",
                 verbose=0,
                 save_best_only=True,
-                save_weights_only=True,
+                save_weights_only=False,
                 mode="auto",
                 save_freq="epoch",
                 options=None,
@@ -130,10 +130,10 @@ def main():
             ts_len=ts_len)
     index = tfrs.layers.factorized_top_k.BruteForce(
             model.customer_model)
-    index.index_from_dataset(
-        articles_tf.batch(1024).map(lambda x:
-            (x["article_id"], model.article_model(x))))
-    titles = test_data.batch(1024).map(lambda x: index(x, k=12)[1])
+    _f = lambda x: (x["article_id"], model.article_model(x))
+    index.index_from_dataset(articles_tf.batch(1024).map(_f))
+    _g = lambda x: index(x, k=12)[1]
+    titles = test_data.batch(1024).map(_g)
     prediction = []
     for title in titles:
         prediction.append(np.array(title))
