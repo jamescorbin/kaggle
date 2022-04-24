@@ -1,8 +1,10 @@
 import sys
 import os
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 import pandas as pd
+import numpy as np
+import tensorflow as tf
 
 logger = logging.getLogger(name=__name__)
 unk = "[UNK]"
@@ -20,7 +22,6 @@ default_transact_fn = os.path.abspath(os.path.join(
 def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
     logger.info(f"Opening articles dataset")
     articles_bytes_cols = [
-            "article_id",
             "prod_name",
             "product_type_name",
             "product_group_name",
@@ -33,18 +34,16 @@ def load_articles_ds(articles_fn: str=default_articles_fn) -> pd.DataFrame:
             "index_group_name",
             "section_name",
             "garment_group_name",
-            "detail_desc",
-            ]
+            "detail_desc",]
     articles_ds = pd.read_csv(articles_fn)
+    articles_ds.drop(
+            articles_ds.index[pd.isnull(articles_ds["article_id"])],
+            axis=0,
+            inplace=True)
     articles_ds["article_id"] = (articles_ds["article_id"]
             .apply(lambda x: f"{x:010d}"))
     for col in articles_bytes_cols:
-        articles_ds[col] = (
-            articles_ds[col]
-                .fillna(unk)
-                .str.casefold()
-                .str.encode("utf-8"))
-    articles_ds = articles_ds.set_index("article_id")
+        articles_ds[col] = articles_ds[col].fillna(unk)
     return articles_ds
 
 def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
@@ -56,21 +55,60 @@ def load_customers_ds(customers_fn: str=default_customer_fn) -> pd.DataFrame:
     customers_ds = pd.read_csv(customers_fn)
     customers_ds["fashion_news_frequency"] = (
             customers_ds["fashion_news_frequency"]
-                .fillna(unk)
-                .str.casefold())
+                .fillna(unk))
     customers_ds["club_member_status"] = (
             customers_ds["club_member_status"]
-                .fillna(unk)
-                .str.casefold())
-    for col in customers_bytes_cols:
-        customers_ds[col] = (customers_ds[col]
-                             .str.encode("utf-8"))
-    idx = pd.notnull(customers_ds["age"])
-    customers_ds.loc[idx, "age_mask"] = 1.0
-    customers_ds.loc[~idx, "age_mask"] = 0.0
-    customers_ds["age"] = customers_ds["age"].fillna(0.0)
-    customers_ds.set_index("customer_id", inplace=True)
+                .fillna(unk))
+    customers_ds.loc["age_mask"] = pd.notnull(customers_ds["age"])
+    customers_ds["age"] = (customers_ds["age"]
+            .fillna(pd.Series(np.random.randint(0, 100, len(customers_ds)))))
+    customers_ds.drop(
+            customers_ds.index[pd.isnull(customers_ds["customer_id"])],
+            axis=0,
+            inplace=True)
     return customers_ds
+
+def convert_transaction_to_datapoint(
+            row,
+            ts_len: int) -> Dict[str, Any]:
+    data = {}
+    data["article_id_hist"] = [
+            row[f"article_id_{n}"]
+            for n in range(ts_len, 0, -1)]
+    data["article_id"] = [row["article_id"]]
+    data["t_dat"] = [row["t_dat"].encode("utf-8")]
+    data["price"] = [row[f"price_{n}"]
+            for n in range(ts_len, 0, -1)]
+    data["price_mask"] = [row[f"price_{n}_mask"]
+            for n in range(ts_len, 0, -1)]
+    data["sales_channel_id"] = [
+            row[f"sales_channel_id_{n}"]
+            for n in range(ts_len, 0, -1)]
+    data["customer_id"] = [row["customer_id"]]
+    return data
+
+def get_test_data(
+            transactions_ds: pd.DataFrame,
+            ts_len: int,
+            ) -> tf.data.Dataset:
+    test_ds = transactions_ds.loc[transactions_ds["test"]==1]
+    data = {}
+    data["article_id_hist"] = (
+        test_ds[[f"article_id_{n}"
+            for n in range(ts_len, 0, -1)]].values)
+    data["article_id"] = test_ds[["article_id"]].values
+    data["price"] = (
+        test_ds[[f"price_{n}"
+            for n in range(ts_len, 0, -1)]].values)
+    data["price_mask"] = (
+        test_ds[[f"price_{n}_mask"
+            for n in range(ts_len, 0, -1)]].values)
+    data["sales_channel_id"] = (
+        test_ds[[f"sales_channel_id_{n}"
+            for n in range(ts_len, 0, -1)]].values)
+    data["customer_id"] = test_ds[["customer_id"]].values
+    data = tf.data.Dataset.from_tensor_slices(data)
+    return data
 
 def append_previous_purchases(
         transaction_ds: pd.DataFrame,
@@ -85,7 +123,8 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [article_id]
                     .shift(n)
-                    .fillna(b""))
+                    .fillna(0)
+                    .astype(int))
         transaction_ds[f"{price}_{n}"] = (
                 transaction_ds
                     .groupby("customer_id")
@@ -96,18 +135,22 @@ def append_previous_purchases(
                     .groupby("customer_id")
                     [sales_channel_id]
                     .shift(n)
-                    .fillna(b"0"))
+                    .fillna(0)
+                    .astype(int))
     for n in range(1, window + 1):
         transaction_ds[f"{price}_{n}_mask"] = (
-            pd.notnull(transaction_ds[f"{price}_{n}"]))
-        transaction_ds[f"{price}_{n}"] = (
-            transaction_ds[f"{price}_{n}"].fillna(0.0))
+                pd.notnull(transaction_ds[f"{price}_{n}"]))
+        transaction_ds[f"{price}_{n}"] = (transaction_ds[f"{price}_{n}"]
+                .fillna(pd.Series(
+                    np.random.normal(0.5, 1, len(transaction_ds)))))
     return transaction_ds
 
 def load_transactions_ds(
+        vocabulary,
         skiprows: int,
         transactions_fn: str=default_transact_fn,
         nrows: int=1_000_000,
+        ts_len: int=3,
         ) -> pd.DataFrame:
     logger.info(f"Opening transactions dataset")
     names = ["t_dat",
@@ -120,18 +163,73 @@ def load_transactions_ds(
             skiprows=skiprows + 1,
             names=names,
             nrows=nrows,)
+    transactions_ds.drop("t_dat", axis=1, inplace=True)
+    article_id_map = {x: i + 1
+            for i, x in enumerate(vocabulary["article_id"])}
+    customer_id_map = {x: i + 1
+            for i, x in enumerate(vocabulary["customer_id"])}
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
                 .apply(lambda x: f"{int(x):010d}")
-                .str.encode("utf-8"))
-    transactions_ds["t_dat"] = transactions_ds["t_dat"].str.encode("utf-8")
+                .apply(lambda x: article_id_map[x])
+                .astype(int))
     transactions_ds["customer_id"] = (
-            transactions_ds["customer_id"].str.encode("utf-8"))
+            transactions_ds["customer_id"]
+                .apply(lambda x: customer_id_map[x])
+                .astype(int))
     transactions_ds["sales_channel_id"] = (
             transactions_ds["sales_channel_id"]
-                .apply(lambda x: str(x).encode("utf-8")))
-    transactions_ds = append_previous_purchases(transactions_ds)
+                .fillna(0).astype(int))
+    transactions_ds = append_previous_purchases(
+            transactions_ds,
+            window=ts_len)
     return transactions_ds
+
+def convert_transactions_csv(
+        out_fp : str,
+        vocabulary: Dict[str, List[str]],
+        transactions_fn: str=default_transact_fn,
+        ts_len: int=3,
+        ):
+    names = ["t_dat",
+             "customer_id",
+             "article_id",
+             "price",
+             "sales_channel_id"]
+    transactions_ds = pd.read_csv(
+            transactions_fn,
+            skiprows=1,
+            names=names,
+            )
+    article_id_map = {x: i + 1
+            for i, x in enumerate(vocabulary["article_id"])}
+    customer_id_map = {x: i + 1
+            for i, x in enumerate(vocabulary["customer_id"])}
+    transactions_ds["article_id"] = (
+            transactions_ds["article_id"]
+                .apply(lambda x: f"{int(x):010d}")
+                .apply(lambda x: article_id_map[x])
+                .astype(int))
+    transactions_ds["customer_id"] = (
+            transactions_ds["customer_id"]
+                .apply(lambda x: customer_id_map[x])
+                .astype(int))
+    transactions_ds["test"] = 0
+    test_set = pd.DataFrame(
+        {
+            "customer_id": np.arange(1, len(vocabulary["customer_id"]) + 1),
+            "article_id": [0] * len(vocabulary["customer_id"]),
+            "test": [1] * len(vocabulary["customer_id"])})
+    transactions_ds = pd.concat([transactions_ds, test_set],
+                                axis=0,
+                                ignore_index=True)
+    transactions_ds["sales_channel_id"] = (
+            transactions_ds["sales_channel_id"]
+                .fillna(0).astype(int))
+    transactions_ds = append_previous_purchases(
+            transactions_ds,
+            window=ts_len)
+    transactions_ds.to_parquet(out_fp)
 
 def write_vocabulary(
         articles_ds: pd.DataFrame,
@@ -141,86 +239,78 @@ def write_vocabulary(
     """
     if not os.path.exists(parent_dir):
         os.mkdir(parent_dir)
-    article_ids = articles_ds.index.unique().tolist()
-    product_name = articles_ds["prod_name"].unique().tolist()
-    garment_voc = articles_ds["garment_group_name"].unique().tolist()
-    section_voc = articles_ds["section_name"].unique().tolist()
-    index_voc = articles_ds["index_name"].unique().tolist()
-    index_group_voc = articles_ds["index_group_name"].unique().tolist()
-    department_voc = articles_ds["department_name"].unique().tolist()
-    colour_value_voc = (articles_ds["perceived_colour_value_name"]
-            .unique().tolist())
-    colour_master_voc = (articles_ds["perceived_colour_master_name"]
-            .unique().tolist())
-    colour_group_voc = articles_ds["colour_group_name"].unique().tolist()
-    graphical_appearance_voc = (articles_ds["graphical_appearance_name"]
-            .unique().tolist())
-    product_group_voc = (articles_ds["product_group_name"]
-            .unique().tolist())
-    product_type_voc = articles_ds["product_type_name"].unique().tolist()
-    club_member_voc = customers_ds["club_member_status"].unique().tolist()
-    fashion_news_voc = (customers_ds["fashion_news_frequency"]
-            .unique().tolist())
-    customer_id = customers_ds.index.tolist()
-    pairs = [
-        (article_ids, "article_ids.txt"),
-        (product_name, "product_name.txt"),
-        (garment_voc, "garments.txt"),
-        (section_voc, "sections.txt"),
-        (index_voc, "index_names.txt"),
-        (index_group_voc, "index_groups.txt"),
-        (department_voc, "departments.txt"),
-        (colour_value_voc, "colour_value_names.txt"),
-        (colour_master_voc, "colour_master_names.txt"),
-        (colour_group_voc, "colour_group_names.txt"),
-        (graphical_appearance_voc, "graphical_appearance_names.txt"),
-        (product_group_voc, "product_group_names.txt"),
-        (product_type_voc, "product_type_names.txt"),
-        (club_member_voc, "club_member_statuses.txt"),
-        (fashion_news_voc, "fashion_news.txt"),
-        (customer_id, "customer_id.txt"),
-    ]
-    for lst, bn in pairs:
-        fn = os.path.join(parent_dir, bn)
+    article_cols = [
+            "article_id",
+            "prod_name",
+            "product_type_name",
+            "product_group_name",
+            "graphical_appearance_name",
+            "colour_group_name",
+            "perceived_colour_value_name",
+            "perceived_colour_master_name",
+            "department_name",
+            "index_name",
+            "index_group_name",
+            "section_name",
+            "garment_group_name",]
+    customer_cols = [
+            "customer_id",
+            "club_member_status",
+            "fashion_news_frequency"]
+    vocabulary = {}
+    for col in article_cols:
+        vocabulary[col] = articles_ds[col].unique().tolist()
+    for col in customer_cols:
+        vocabulary[col] = customers_ds[col].unique().tolist()
+    for col, lst in vocabulary.items():
+        fn = os.path.join(parent_dir, f"{col}.txt")
         with open(fn, "w") as f:
-            logger.info(bn)
+            logger.info(os.path.basename(fn))
             for w in lst:
-                f.write(w.decode("utf-8") + "\n")
+                if w != unk:
+                    try:
+                        f.write(w + "\n")
+                    except TypeError as e:
+                        logger.error(e)
+                        logger.error(w)
+                        raise TypeError(e)
+    return vocabulary
 
 def load_vocabulary(
         parent_dir: str="./vocabulary"):
     """
     """
-    vocabularies = {}
-    pairs = [
-        ("article_id", "article_ids.txt"),
-        ("customer_id", "customer_id.txt"),
-        ("prod_name", "product_name.txt"),
-        ("product_type_name", "product_type_names.txt"),
-        ("product_group_name", "product_group_names.txt"),
-        ("garment_group_name", "garments.txt"),
-        ("section_name", "sections.txt"),
-        ("index_name", "index_names.txt"),
-        ("index_group_name", "index_groups.txt"),
-        ("department_name", "departments.txt"),
-        ("perceived_colour_value_name", "colour_value_names.txt"),
-        ("perceived_colour_master_name", "colour_master_names.txt"),
-        ("colour_group_name", "colour_group_names.txt"),
-        ("graphical_appearance_name", "graphical_appearance_names.txt"),
-        ("club_member_status", "club_member_statuses.txt"),
-        ("fashion_news_frequency", "fashion_news.txt"),]
-    for lst, bn in pairs:
-        fn = os.path.join(parent_dir, bn)
+    vocabulary = {}
+    cols = [
+            "article_id",
+            "prod_name",
+            "product_type_name",
+            "product_group_name",
+            "graphical_appearance_name",
+            "colour_group_name",
+            "perceived_colour_value_name",
+            "perceived_colour_master_name",
+            "department_name",
+            "index_name",
+            "index_group_name",
+            "section_name",
+            "garment_group_name",
+            "customer_id",
+            "club_member_status",
+            "fashion_news_frequency"]
+    for col in cols:
+        fn = os.path.join(parent_dir, f"{col}.txt")
         with open(fn, "r") as f:
-            vocabularies[lst] = [w.strip().encode("utf-8") for w in f]
-    return vocabularies
+            vocabulary[col] = [w.strip() for w in f]
+    return vocabulary
 
 def vectorize_features(
         articles_ds: pd.DataFrame,
         customers_ds: pd.DataFrame,
         vocabulary: Dict[str, List[str]],
         ) -> Tuple[pd.DataFrame]:
-    cols = ["garment_group_name",
+    cols = [
+            "garment_group_name",
             "section_name",
             "index_name",
             "index_group_name",
@@ -232,16 +322,22 @@ def vectorize_features(
             "product_group_name",
             "product_type_name",]
     for col in cols:
-        dct = {x: i for i, x in enumerate(vocabulary[col])}
+        dct = {x: i + 1 for i, x in enumerate(vocabulary[col])}
         articles_ds[col] = (
             articles_ds[col]
-            .apply(lambda x: dct[x]))
-    cols = ["club_member_status",
+            .apply(lambda x: dct[x] if x in dct else 0))
+    for col in ["article_id"]:
+        dct = {x: i + 1 for i, x in enumerate(vocabulary[col])}
+        articles_ds[col] = (
+            articles_ds[col]
+            .apply(lambda x: dct[x] if x in dct else 0))
+    cols = [
+            "customer_id",
+            "club_member_status",
             "fashion_news_frequency"]
     for col in cols:
-        dct = {x: i for i, x in enumerate(vocabulary[col])}
+        dct = {x: i + 1 for i, x in enumerate(vocabulary[col])}
         customers_ds[col] = (
             customers_ds[col]
-            .apply(lambda x: dct[x]))
+            .apply(lambda x: dct[x] if x in dct else 0))
     return articles_ds, customers_ds
-

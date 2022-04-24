@@ -142,3 +142,5 @@ def main(outfn=default_results_fn):
     results.to_csv(outfn, index=False)
     return df_train, y_train, clf, results
 
+if __name__=="__main__":
+    main()
