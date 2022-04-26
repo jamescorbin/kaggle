@@ -10,9 +10,7 @@ sys.path.insert(1, pt)
 import rawdata
 import serialize
 
-def make_articles_tf(
-        articles_ds: pd.DataFrame,
-        ) -> Dict[str, Tuple[Any, Any]:
+def make_articles_tf(articles_ds: pd.DataFrame) -> tf.data.Dataset:
     articles_tf = tf.data.Dataset.from_tensor_slices(
         {
             "article_id": articles_ds["article_id"].values,

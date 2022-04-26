@@ -1,10 +1,10 @@
 {
-		"top_k_batch_size": 2048,
-		"batch_size": 2048,
+		"batch_size": 4096,
+		"top_k_batch_size": 4096,
 		"epochs": 5,
-		"factor_dim": 64,
-		"article_embedding_dim": 45,
-		"gru_dim": 45,
+		"factor_dim": 32,
+		"article_embedding_dim": 32,
+		"gru_dim": 32,
 		"price_mean": 0.0278292,
 		"price_var": 0.000367915,
 		"version": "0.0.0"

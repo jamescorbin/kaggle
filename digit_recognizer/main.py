@@ -1,26 +1,35 @@
 import sys
 import os
+import json
 from typing import List, Tuple
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+pt = os.path.abspath(os.path.join(
+    __file__, os.pardir))
+sys.path.insert(1, pt)
+import digitmodel
 
-_height, _width = 28, 28
-
-def load_train_data(fn: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_train_data(fn: str,
+                    image_shape: Tuple[int, int, int],
+                    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     df = pd.read_csv(fn, header=0)
     x_train = (df.drop("label", axis=1)
                .values
-               .reshape((len(df), _height, _width, 1))
+               .reshape((len(df), image_shape[0],
+                         image_shape[1], image_shape[2]))
                .astype(np.float32))
     y_train = pd.DataFrame(df[["label"]]).values
     return x_train, y_train
 
-def load_test_data(fn: str) -> pd.DataFrame:
+def load_test_data(fn: str,
+                   image_shape: Tuple[int, int, int],
+                   ) -> pd.DataFrame:
     df = pd.read_csv(fn, header=0)
     x_test = (df
                .values
-               .reshape((len(df), _height, _width, 1))
+               .reshape((len(df), image_shape[0],
+                         image_shape[1], image_shape[2]))
                .astype(np.float32))
     return x_test
 
@@ -33,18 +42,20 @@ def decode_predictions(predictions: np.array) -> np.array:
 
 if __name__=="__main__":
     config_fn = "config-model.json"
+    tfboard_log_dir = "./tfboard"
+    model_save_pt = "./model.hdf5"
     with open(config_fn, "r") as f:
         config = json.load(f)
     tf.random.set_seed(config["seed"])
     train_fn = os.path.abspath(os.path.join(
         __file__, os.pardir, "data", "train.csv"))
-    x_train, y_train = load_train_data(train_fn)
+    x_train, y_train = load_train_data(train_fn,
+                                       image_shape=config["image_shape"])
     test_fn = os.path.abspath(os.path.join(
         __file__, os.pardir, "data", "test.csv"))
     x_train = convert_gray_to_float(x_train)
-    x_pred = load_test_data(test_fn)
+    x_pred = load_test_data(test_fn, image_shape=config["image_shape"])
     x_pred = convert_gray_to_float(x_pred)
-    config = {}
     strategy = tf.distribute.get_strategy()
     batch_size = config["batch_size"] * strategy.num_replicas_in_sync
     with strategy.scope():
@@ -56,7 +67,7 @@ if __name__=="__main__":
                 .filter(lambda x, y:
                         x % config["split_mod_k"] <= config["train_k"])
                 .map(lambda x, y: y)
-                .shuffle(config["shuffle"])
+                .shuffle(config["shuffle"]))
         x_valid = (x_ds
                 .enumerate()
                 .filter(lambda x, y:
@@ -91,13 +102,13 @@ if __name__=="__main__":
         early_stopping = tf.keras.callbacks.EarlyStopping(
                 monitor="val_loss",
                 min_delta=0,
-                patience=0,
+                patience=1,
                 verbose=0,
                 mode="auto",
                 baseline=None,
                 restore_best_weights=True)
         callbacks = [tfboard, model_checkpoint, early_stopping]
-        model = build_model(config)
+        model = digitmodel.build_model(config)
         hist = model.fit(
                 x_train
                     .batch(batch_size, drop_remainder=True)
@@ -114,7 +125,7 @@ if __name__=="__main__":
         model.evaluate(
                 x_test.batch(batch_size),
                 callbacks=callbacks)
-        y_pred = model.predict(x_test)
+    y_pred = model.predict(x_pred)
     y_pred = decode_predictions(y_pred)
     results = pd.DataFrame(
         {"ImageId": np.arange(1, y_pred.shape[0] + 1),

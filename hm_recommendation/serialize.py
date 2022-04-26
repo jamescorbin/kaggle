@@ -21,19 +21,20 @@ def run_serialization(
         transactions_parquet: str="./data/transactions.parquet",
         ts_len: int=4,
         ) -> None:
-    customers_ds = rawdata.load_customers_ds(customers_fn)
-    articles_ds = rawdata.load_articles_ds(articles_fn)
-    vocabulary = rawdata.write_vocabulary(
-            articles_ds,
-            customers_ds,
-            parent_dir=vocab_dir)
-    rawdata.convert_transactions_csv(
-            transactions_parquet,
-            vocabulary,
-            ts_len=ts_len)
+    if not os.path.exists(transactions_parquet):
+        rawdata.convert_transactions_csv(
+                transactions_fn=transactions_fn,
+                out_fp=transactions_parquet,
+                ts_len=ts_len)
+    if not os.path.exists(vocab_dir):
+        customers_ds = rawdata.load_customers_ds(customers_fn)
+        articles_ds = rawdata.load_articles_ds(articles_fn)
+        vocabulary = rawdata.write_vocabulary(
+                articles_ds,
+                customers_ds,
+                parent_dir=vocab_dir)
     write_dataset(
             transactions_parquet,
-            vocabulary,
             tfrec_dir=tfrec_dir,
             ts_len=ts_len)
 
@@ -49,7 +50,7 @@ def _floatlist(value):
 
 def serialize_example(ds: Dict[str, np.array]):
     feature = {
-        "customer_id": _int64list(ds["customer_id"]),
+        "customer_id": _byteslist(ds["customer_id"]),
         #"t_dat": _byteslist(ds["t_dat"]),
         "article_id": _int64list(ds["article_id"]),
         "article_id_hist": _int64list(ds["article_id_hist"]),
@@ -70,7 +71,7 @@ def tf_serialize_example(ds):
 
 def parse(example, ts_len: int):
     feature_description = {
-        "customer_id": tf.io.FixedLenFeature([1], tf.int64),
+        "customer_id": tf.io.FixedLenFeature([1], tf.string),
         #"t_dat": tf.io.FixedLenFeature([1], tf.string),
         "article_id":
                 tf.io.FixedLenFeature([1], tf.int64),
@@ -103,7 +104,6 @@ def write_chunk(
 
 def write_dataset(
             transactions_fn: str,
-            vocabulary: Dict[str, List[str]],
             tfrec_dir: str="tfrec",
             ts_len: int=4,
             filesize: int=1_000_000):
@@ -123,5 +123,3 @@ def write_dataset(
                 tfrec_dir=tfrec_dir,
                 ts_len=ts_len,
                 tfrec_fn=f"{i:03d}.tfrec")
-
-

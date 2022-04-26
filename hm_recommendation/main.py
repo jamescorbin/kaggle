@@ -38,42 +38,44 @@ def main():
     tfrec_dir = "./tfrec"
     articles_fn = "./data/articles.csv"
     customers_fn = "./data/customers.csv"
+    config["articles_fn"] = articles_fn
+    config["customers_fn"] = customers_fn
     transactions_fn = "./data/transactions_train.csv"
     tfboard_log_dir = "./tfboard"
     model_save_pt = "model.hdf5"
     transactions_parquet = "./data/transactions.parquet"
     ts_len = 4
-    #logger.info("Serializing dataset")
-    #serialize.run_serialization(
-    #        articles_fn,
-    #        customers_fn,
-    #        transactions_fn,
-    #        tfrec_dir,
-    #        vocab_dir,
-    #        transactions_parquet=transactions_parquet,
-    #        ts_len=ts_len)
-    vocabulary = rawdata.load_vocabulary(parent_dir=vocab_dir)
+    logger.info("Serializing dataset")
+    serialize.run_serialization(
+            articles_fn,
+            customers_fn,
+            transactions_fn,
+            tfrec_dir,
+            vocab_dir,
+            transactions_parquet=transactions_parquet,
+            ts_len=ts_len)
+    vocabulary = rawdata.load_vocabulary(
+            config=config,
+            parent_dir=vocab_dir)
     customers_ds = rawdata.load_customers_ds(customers_fn)
     articles_ds = rawdata.load_articles_ds(articles_fn)
     articles_ds, customers_ds = rawdata.vectorize_features(
             articles_ds,
             customers_ds,
             vocabulary)
-    lookups = rawdata.make_lookup_pairs(articles_ds, customers_ds)
     articles_tf = tfsalesdata.make_articles_tf(articles_ds)
     del articles_ds
     del customers_ds
     strategy = tf.distribute.get_strategy()
-    batch_size = config["batch_size"] * strategy.num_replicas_in_sync
+    #batch_size = config["batch_size"] * strategy.num_replicas_in_sync
+    batch_size = config["batch_size"]
     with strategy.scope():
         xtrain, xvalid, xtest = tfsalesdata.make_tfds(
                 tfrec_dir,
                 config=config,
                 ts_len=ts_len)
         model = recommendmodel.RetrievalModel(
-                vocabulary,
                 articles_tf,
-                lookups,
                 config,
                 name="model_a")
         tfboard = tf.keras.callbacks.TensorBoard(
@@ -91,7 +93,7 @@ def main():
                 monitor="val_loss",
                 verbose=0,
                 save_best_only=True,
-                save_weights_only=False,
+                save_weights_only=True,
                 mode="auto",
                 save_freq="epoch",
                 options=None,
@@ -99,7 +101,7 @@ def main():
         early_stopping = tf.keras.callbacks.EarlyStopping(
                 monitor="val_loss",
                 min_delta=0,
-                patience=0,
+                patience=1,
                 verbose=0,
                 mode="auto",
                 baseline=None,
@@ -107,24 +109,22 @@ def main():
         callbacks = [tfboard, model_checkpoint, early_stopping]
         model.fit(
                 xtrain
-                    .batch(config["batch_size"], drop_remainder=True)
-                    .take(10)
+                    .batch(batch_size, drop_remainder=True)
                     .prefetch(tf.data.AUTOTUNE),
                 validation_data=xvalid
-                    .batch(config["batch_size"])
-                    .take(10)
+                    .batch(batch_size)
                     .prefetch(tf.data.AUTOTUNE),
                 epochs=config["epochs"],
                 callbacks=callbacks)
-        #model.evaluate(
-        #        xtrain.batch(config["batch_size"]),
-        #        callbacks=callbacks)
-        #model.evaluate(
-        #        xvalid.batch(config["batch_size"]),
-        #        callbacks=callbacks)
-        #model.evaluate(
-        #        xtest.batch(config["batch_size"]),
-        #        callbacks=callbacks)
+        model.evaluate(
+                xtrain.batch(config["batch_size"]),
+                callbacks=callbacks)
+        model.evaluate(
+                xvalid.batch(config["batch_size"]),
+                callbacks=callbacks)
+        model.evaluate(
+                xtest.batch(config["batch_size"]),
+                callbacks=callbacks)
     test_data = rawdata.get_test_data(
             pd.read_parquet(transactions_parquet),
             ts_len=ts_len)

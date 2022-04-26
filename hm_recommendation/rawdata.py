@@ -5,7 +5,6 @@ from typing import Dict, List, Tuple, Any
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-
 logger = logging.getLogger(name=__name__)
 unk = "[UNK]"
 
@@ -84,7 +83,7 @@ def convert_transaction_to_datapoint(
     data["sales_channel_id"] = [
             row[f"sales_channel_id_{n}"]
             for n in range(ts_len, 0, -1)]
-    data["customer_id"] = [row["customer_id"]]
+    data["customer_id"] = [row["customer_id"].encode("utf-8")]
     return data
 
 def get_test_data(
@@ -112,12 +111,12 @@ def get_test_data(
 
 def append_previous_purchases(
         transaction_ds: pd.DataFrame,
-        window: int=5,
+        ts_len: int=5,
         ) -> pd.DataFrame:
     article_id = "article_id"
     price = "price"
     sales_channel_id = "sales_channel_id"
-    for n in range(1, window + 1):
+    for n in range(1, ts_len + 1):
         transaction_ds[f"{article_id}_{n}"] = (
                 transaction_ds
                     .groupby("customer_id")
@@ -137,7 +136,7 @@ def append_previous_purchases(
                     .shift(n)
                     .fillna(0)
                     .astype(int))
-    for n in range(1, window + 1):
+    for n in range(1, ts_len + 1):
         transaction_ds[f"{price}_{n}_mask"] = (
                 pd.notnull(transaction_ds[f"{price}_{n}"]))
         transaction_ds[f"{price}_{n}"] = (transaction_ds[f"{price}_{n}"]
@@ -187,7 +186,6 @@ def load_transactions_ds(
 
 def convert_transactions_csv(
         out_fp : str,
-        vocabulary: Dict[str, List[str]],
         transactions_fn: str=default_transact_fn,
         ts_len: int=3,
         ):
@@ -201,25 +199,17 @@ def convert_transactions_csv(
             skiprows=1,
             names=names,
             )
-    article_id_map = {x: i + 1
-            for i, x in enumerate(vocabulary["article_id"])}
-    customer_id_map = {x: i + 1
-            for i, x in enumerate(vocabulary["customer_id"])}
     transactions_ds["article_id"] = (
             transactions_ds["article_id"]
-                .apply(lambda x: f"{int(x):010d}")
-                .apply(lambda x: article_id_map[x])
-                .astype(int))
-    transactions_ds["customer_id"] = (
-            transactions_ds["customer_id"]
-                .apply(lambda x: customer_id_map[x])
                 .astype(int))
     transactions_ds["test"] = 0
+    unique_customer_id = transactions_ds["customer_id"].unique()
     test_set = pd.DataFrame(
         {
-            "customer_id": np.arange(1, len(vocabulary["customer_id"]) + 1),
-            "article_id": [0] * len(vocabulary["customer_id"]),
-            "test": [1] * len(vocabulary["customer_id"])})
+            "customer_id": unique_customer_id,
+            "article_id": [0] * unique_customer_id.shape[0],
+            "test": [1] * unique_customer_id.shape[0]
+        })
     transactions_ds = pd.concat([transactions_ds, test_set],
                                 axis=0,
                                 ignore_index=True)
@@ -228,7 +218,7 @@ def convert_transactions_csv(
                 .fillna(0).astype(int))
     transactions_ds = append_previous_purchases(
             transactions_ds,
-            window=ts_len)
+            ts_len=ts_len)
     transactions_ds.to_parquet(out_fp)
 
 def write_vocabulary(
@@ -277,7 +267,9 @@ def write_vocabulary(
     return vocabulary
 
 def load_vocabulary(
-        parent_dir: str="./vocabulary"):
+        config: Dict[str, Any],
+        parent_dir: str="./vocabulary",
+        ) -> Dict[str, List[Any]]:
     """
     """
     vocabulary = {}
@@ -302,6 +294,8 @@ def load_vocabulary(
         fn = os.path.join(parent_dir, f"{col}.txt")
         with open(fn, "r") as f:
             vocabulary[col] = [w.strip() for w in f]
+        config[f"{col}_dim"] = len(vocabulary[col]) + 1
+        config[f"{col}"] = fn
     return vocabulary
 
 def vectorize_features(
@@ -341,35 +335,3 @@ def vectorize_features(
             customers_ds[col]
             .apply(lambda x: dct[x] if x in dct else 0))
     return articles_ds, customers_ds
-
-def make_lookup_pairs(
-        articles_ds: pd.DataFrame,
-        customers_ds: pd.DataFrame,
-        ) -> Dict[str, Tuple[Any, Any]]:
-    article_id = articles_ds["article_id"].values.tolist()
-    customer_id = customers_ds["customer_id"].values.tolist()
-    article_columns = [
-            "product_group_name",
-            "graphical_appearance_name",
-            "perceived_colour_master_name",
-            "section_name",
-            #"product_type_name",
-            #"colour_group_name",
-            #"perceived_colour_value_name",
-            #"department_name",
-            #"index_name",
-            #"index_group_name",
-            #"garment_group_name",
-            #"detail_desc",
-            ]
-    customer_columns = [
-            "club_member_status",
-            "fashion_news_frequency",
-            "age"]
-    lookups = {
-        col: list(zip(article_id, articles_ds[col].values.tolist()))
-        for col in article_columns}
-    lookups.update({
-        col: list(zip(customer_id, customers_ds[col].values.tolist()))
-        for col in customer_columns})
-    return lookups

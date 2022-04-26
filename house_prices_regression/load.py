@@ -8,11 +8,9 @@ import pandas as pd
 import numpy as np
 
 default_train_fn = os.path.abspath(os.path.join(
-        __file__, os.pardir, os.pardir, "data",
-        "train.csv"))
+        __file__, os.pardir, "data", "train.csv"))
 default_test_fn = os.path.abspath(os.path.join(
-        __file__, os.pardir, os.pardir, "data",
-        "test.csv"))
+        __file__, os.pardir, "data", "test.csv"))
 
 def load_data(train_fn: str=default_train_fn,
               test_fn: str=default_test_fn,
