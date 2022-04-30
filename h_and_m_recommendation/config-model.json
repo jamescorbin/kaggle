@@ -1,0 +1,15 @@
+{
+		"batch_size": 32,
+		"top_k_batch_size": 4096,
+		"mod_k": 7,
+		"n_train": 4,
+		"n_valid": 5,
+		"ts_len": 5,
+		"epochs": 5,
+		"factor_dim": 64,
+		"article_embedding_dim": 40,
+		"gru_dim": 40,
+		"price_mean": 0.0278292,
+		"price_var": 0.000367915,
+		"version": "0.0.0"
+}

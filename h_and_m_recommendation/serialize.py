@@ -33,10 +33,11 @@ def run_serialization(
                 articles_ds,
                 customers_ds,
                 parent_dir=vocab_dir)
-    write_dataset(
-            transactions_parquet,
-            tfrec_dir=tfrec_dir,
-            ts_len=ts_len)
+    if not os.path.exists(tfrec_dir):
+        write_dataset(
+                transactions_parquet,
+                tfrec_dir=tfrec_dir,
+                ts_len=ts_len)
 
 def _byteslist(value):
     return tf.train.Feature(

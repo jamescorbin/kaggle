@@ -45,15 +45,14 @@ def make_tfds(
         tfrec_dir: str,
         config: Dict[str, Any],
         ts_len: int,
-        mod_k: int=7,
-        n_train: int=4,
-        n_valid: int=5
         ):
     _f = lambda x, y: y
-    _g1 = lambda x, y: x % mod_k <= n_train
-    _g2 = lambda x, y: (n_train < x % mod_k) & (x % mod_k <= n_valid)
-    _g3 = lambda x, y: (x % mod_k) > n_valid
-    parse_f = lambda x: serialize.parse(x, ts_len=ts_len)
+    _g1 = lambda x, y: x % config["mod_k"] <= config["n_train"]
+    _g2 = (lambda x, y:
+           (config["n_train"] < x % config["mod_k"])
+           & (x % config["mod_k"] <= config["n_valid"]))
+    _g3 = lambda x, y: (x % config["mod_k"]) > config["n_valid"]
+    parse_f = lambda x: serialize.parse(x, ts_len=config["ts_len"])
     tfrec_files = [os.path.join(tfrec_dir, f)
                    for f in os.listdir(tfrec_dir)]
     filenames = tf.data.Dataset.from_tensor_slices(tfrec_files)

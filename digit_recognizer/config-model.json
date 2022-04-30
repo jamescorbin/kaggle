@@ -5,7 +5,7 @@
 		"conv2d_kernel": [5, 5],
 		"pool2d_size": [3, 3],
 		"batch_size": 32,
-		"epochs": 10,
+		"epochs": 15,
 		"split_mod_k": 10,
 		"train_k": 6,
 		"valid_k": 8,

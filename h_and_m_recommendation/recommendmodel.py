@@ -6,6 +6,11 @@ from typing import List, Dict, Any
 import pandas as pd
 import tensorflow as tf
 import tensorflow_recommenders as tfrs
+pt = os.path.abspath(os.path.join(
+    __file__, os.pardir))
+sys.path.insert(1, pt)
+import tfsalesdata
+import rawdata
 
 class CustomerModel(tf.keras.Model):
     def __init__(self,
@@ -56,7 +61,7 @@ class ArticleModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["product_group_name"].values,
                         dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.graphical_appearance_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -65,7 +70,7 @@ class ArticleModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["graphical_appearance_name"].values,
                         dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.perceived_colour_master_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -74,7 +79,7 @@ class ArticleModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["perceived_colour_master_name"].values,
                         dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.article_id_lookup = tf.keras.layers.IntegerLookup(
                 vocabulary=config["article_id"],
                 name="article_id_lookup")
@@ -178,7 +183,7 @@ class SequentialQueryModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["product_group_name"].values,
                                 dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.graphical_appearance_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -187,7 +192,7 @@ class SequentialQueryModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["graphical_appearance_name"].values,
                                 dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.perceived_colour_master_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -196,7 +201,7 @@ class SequentialQueryModel(tf.keras.Model):
                     tf.constant(
                         articles_ds["perceived_colour_master_name"].values,
                         dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.club_member_status_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -206,7 +211,7 @@ class SequentialQueryModel(tf.keras.Model):
                         customers_ds["club_member_status"]
                             .fillna("[UNK]").values,
                         dtype=tf.string)),
-                default_value="[UNK]")
+                default_value=b"[UNK]")
         self.fashion_news_frequency_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -216,11 +221,11 @@ class SequentialQueryModel(tf.keras.Model):
                         customers_ds["fashion_news_frequency"]
                             .fillna("[UNK]").values,
                         dtype=tf.string)),
-                default_value="[UNK]")
-        self.price_norm = tf.keras.layers.Normalization(
-                mean=config["price_mean"],
-                variance=config["price_var"],
-                name="price_norm")
+                default_value=b"[UNK]")
+        #self.price_norm = tf.keras.layers.Normalization(
+        #        mean=config["price_mean"],
+        #        variance=config["price_var"],
+        #        name="price_norm")
         self.product_group_name_lookup = tf.keras.layers.StringLookup(
                 vocabulary=config["product_group_name"],
                 name="product_group_name")
@@ -235,7 +240,7 @@ class SequentialQueryModel(tf.keras.Model):
                 config["graphical_appearance_name_dim"],
                 config["graphical_appearance_name_dim"] // 2,
                 name="graphical_encoder")
-        self.graphical_norm = tf.keras.layers.BatchNormalization()
+        #self.graphical_norm = tf.keras.layers.BatchNormalization()
         self.colour_master_vec = tf.keras.layers.StringLookup(
                 vocabulary=config["perceived_colour_master_name"],
                 name="colour_master_vectorizer")
@@ -243,7 +248,7 @@ class SequentialQueryModel(tf.keras.Model):
                 config["perceived_colour_master_name_dim"],
                 config["perceived_colour_master_name_dim"] // 2,
                 name="colour_master_encoder")
-        self.colour_master_norm = tf.keras.layers.BatchNormalization()
+        #self.colour_master_norm = tf.keras.layers.BatchNormalization()
         self.club_member_status_lookup = tf.keras.layers.StringLookup(
                 vocabulary=config["club_member_status"],
                 name="club_member_status_lookup")
@@ -335,10 +340,11 @@ class SequentialQueryModel(tf.keras.Model):
 
 class RetrievalModel(tfrs.Model):
     def __init__(self,
-                 articles_ds,
                  config: Dict[str, List[Any]],
                  **kwargs):
         super().__init__(**kwargs)
+        articles_tf = tfsalesdata.make_articles_tf(
+            rawdata.load_articles_ds(config["articles_fn"]))
         self.config = config
         self.customer_model = SequentialQueryModel(
                 config,
@@ -348,7 +354,7 @@ class RetrievalModel(tfrs.Model):
                 name="article_model")
         self.task = tfrs.tasks.Retrieval(
             metrics=tfrs.metrics.FactorizedTopK(
-                articles_ds
+                articles_tf
                     .batch(config["top_k_batch_size"])
                     .map(self.article_model)))
         opt = tf.keras.optimizers.Adagrad(learning_rate=0.1)
@@ -360,9 +366,10 @@ class RetrievalModel(tfrs.Model):
             self.article_model(features))
 
     def compute_loss(self, features, training=False) -> tf.Tensor:
-        return self.task(
-            self.customer_model(features),
-            self.article_model(features))
+        #return self.task(
+        #    self.customer_model(features),
+        #    self.article_model(features))
+        return self(features)
 
     def get_config(self):
         config = super().get_config()

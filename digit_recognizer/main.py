@@ -9,6 +9,9 @@ pt = os.path.abspath(os.path.join(
     __file__, os.pardir))
 sys.path.insert(1, pt)
 import digitmodel
+import logging
+
+logger = logging.getLogger(name=__name__)
 
 def load_train_data(fn: str,
                     image_shape: Tuple[int, int, int],
@@ -116,15 +119,12 @@ if __name__=="__main__":
                 validation_data=x_valid.batch(batch_size),
                 epochs=config["epochs"],
                 callbacks=callbacks)
-        model.evaluate(
-                x_train.batch(batch_size),
-                callbacks=callbacks)
-        model.evaluate(
-                x_valid.batch(batch_size),
-                callbacks=callbacks)
-        model.evaluate(
+        hist2 = model.evaluate(
                 x_test.batch(batch_size),
-                callbacks=callbacks)
+                callbacks=callbacks,
+                return_dict=True)
+    print("hist", hist.history)
+    print("eval_hist", hist2)
     y_pred = model.predict(x_pred)
     y_pred = decode_predictions(y_pred)
     results = pd.DataFrame(
