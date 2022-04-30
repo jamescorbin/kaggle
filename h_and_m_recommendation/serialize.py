@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import logging
 from typing import Dict, List, Any
 import tensorflow as tf
@@ -11,33 +12,6 @@ sys.path.insert(1, pt)
 import rawdata
 
 logger = logging.getLogger(name=__name__)
-
-def run_serialization(
-        articles_fn: str,
-        customers_fn: str,
-        transactions_fn: str,
-        tfrec_dir: str,
-        vocab_dir: str,
-        transactions_parquet: str="./data/transactions.parquet",
-        ts_len: int=4,
-        ) -> None:
-    if not os.path.exists(transactions_parquet):
-        rawdata.convert_transactions_csv(
-                transactions_fn=transactions_fn,
-                out_fp=transactions_parquet,
-                ts_len=ts_len)
-    if not os.path.exists(vocab_dir):
-        customers_ds = rawdata.load_customers_ds(customers_fn)
-        articles_ds = rawdata.load_articles_ds(articles_fn)
-        vocabulary = rawdata.write_vocabulary(
-                articles_ds,
-                customers_ds,
-                parent_dir=vocab_dir)
-    if not os.path.exists(tfrec_dir):
-        write_dataset(
-                transactions_parquet,
-                tfrec_dir=tfrec_dir,
-                ts_len=ts_len)
 
 def _byteslist(value):
     return tf.train.Feature(
@@ -53,6 +27,7 @@ def serialize_example(ds: Dict[str, np.array]):
     feature = {
         "customer_id": _byteslist(ds["customer_id"]),
         #"t_dat": _byteslist(ds["t_dat"]),
+        "test": _int64list(ds["test"]),
         "article_id": _int64list(ds["article_id"]),
         "article_id_hist": _int64list(ds["article_id_hist"]),
         "sales_channel_id": _int64list(ds["sales_channel_id"]),
@@ -74,6 +49,7 @@ def parse(example, ts_len: int):
     feature_description = {
         "customer_id": tf.io.FixedLenFeature([1], tf.string),
         #"t_dat": tf.io.FixedLenFeature([1], tf.string),
+        "test": tf.io.FixedLenFeature([1], tf.int64),
         "article_id":
                 tf.io.FixedLenFeature([1], tf.int64),
         "article_id_hist":
@@ -110,12 +86,8 @@ def write_dataset(
             filesize: int=1_000_000):
     if not os.path.exists(tfrec_dir):
         os.mkdir(tfrec_dir)
-    shards = 32
+    shards = 34
     transactions_ds = pd.read_parquet(transactions_fn)
-    transactions_ds.drop(
-            transactions_ds.index[transactions_ds["test"]==1],
-            axis=0,
-            inplace=True)
     for i in range(shards):
         write_chunk(
                 transactions_ds,
@@ -124,3 +96,14 @@ def write_dataset(
                 tfrec_dir=tfrec_dir,
                 ts_len=ts_len,
                 tfrec_fn=f"{i:03d}.tfrec")
+
+if __name__=="__main__":
+    config_fn = "config-model.json"
+    tfrec_dir = "data/tfrec"
+    with open(config_fn, "r") as f:
+        config = json.load(f)
+    sequential_fn = "data/sequential.parquet"
+    write_dataset(
+            sequential_fn,
+            tfrec_dir=tfrec_dir,
+            ts_len=config["ts_len"],)

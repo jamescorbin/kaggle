@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+import json
 from typing import Dict, List, Tuple, Any
 import pandas as pd
 import numpy as np
@@ -14,12 +15,18 @@ default_articles_fn = os.path.abspath(os.path.join(
 default_articles_parquet = os.path.abspath(os.path.join(
         __file__, os.pardir,
         "data", "articles.parquet"))
-default_customer_fn = os.path.abspath(os.path.join(
+default_customers_fn = os.path.abspath(os.path.join(
         __file__, os.pardir,
         "data", "customers.csv"))
+default_customers_parquet = os.path.abspath(os.path.join(
+        __file__, os.pardir,
+        "data", "customers.parquet"))
 default_transact_fn = os.path.abspath(os.path.join(
         __file__, os.pardir,
         "data", "transactions_train.csv"))
+default_transact_parquet = os.path.abspath(os.path.join(
+        __file__, os.pardir,
+        "data", "transactions.parquet"))
 
 def load_articles_ds(
         articles_fn: str=default_articles_fn,
@@ -51,11 +58,11 @@ def load_articles_ds(
             articles_ds[col] = articles_ds[col].fillna(unk)
         articles_ds.to_parquet(articles_parquet)
     else:
-        articles_ds.read_parquet(articles_parquet)
+        articles_ds = pd.read_parquet(articles_parquet)
     return articles_ds
 
 def load_customers_ds(
-        customers_fn: str=default_customer_fn,
+        customers_fn: str=default_customers_fn,
         customers_parquet: str=default_customers_parquet,
         ) -> pd.DataFrame:
     if not os.path.exists(customers_parquet):
@@ -77,7 +84,7 @@ def load_customers_ds(
         std = customers_ds["age"].std()
         n = len(customers_ds)
         customers_ds["age"] = (customers_ds["age"]
-                .fillna(pd.Series(np.random.random(m, std, n))))
+                .fillna(pd.Series(np.random.normal(m, std, n))))
         customers_ds.drop(
                 customers_ds.index[
                     pd.isnull(customers_ds["customer_id"])],
@@ -85,7 +92,7 @@ def load_customers_ds(
                 inplace=True)
         customers_ds.to_parquet(customers_parquet)
     else:
-        customers_ds.read_parquet(customers_parquet)
+        customers_ds = pd.read_parquet(customers_parquet)
     return customers_ds
 
 def convert_transaction_to_datapoint(
@@ -95,8 +102,9 @@ def convert_transaction_to_datapoint(
     data["article_id_hist"] = [
             row[f"article_id_{n}"]
             for n in range(ts_len, 0, -1)]
+    data["test"] = [row["test"]]
     data["article_id"] = [row["article_id"]]
-    data["t_dat"] = [row["t_dat"].encode("utf-8")]
+    #data["t_dat"] = [row["t_dat"].encode("utf-8")]
     data["price"] = [row[f"price_{n}"]
             for n in range(ts_len, 0, -1)]
     data["price_mask"] = [row[f"price_{n}_mask"]
@@ -130,7 +138,7 @@ def get_test_data(
     return data
 
 def append_previous_purchases(
-        transaction_ds: pd.DataFrame,
+        transactions_ds: pd.DataFrame,
         ts_len: int=5,
         ) -> pd.DataFrame:
     article_id = "article_id"
@@ -138,20 +146,20 @@ def append_previous_purchases(
     sales_channel_id = "sales_channel_id"
     article_id_fillna = -1
     for n in range(1, ts_len + 1):
-        transaction_ds[f"{article_id}_{n}"] = (
-                transaction_ds
+        transactions_ds[f"{article_id}_{n}"] = (
+                transactions_ds
                     .groupby("customer_id")
                     [article_id]
                     .shift(n)
                     .fillna(article_id_fillna)
                     .astype(int))
-        transaction_ds[f"{price}_{n}"] = (
-                transaction_ds
+        transactions_ds[f"{price}_{n}"] = (
+                transactions_ds
                     .groupby("customer_id")
                     [price]
                     .shift(n))
-        transaction_ds[f"{sales_channel_id}_{n}"] = (
-                transaction_ds
+        transactions_ds[f"{sales_channel_id}_{n}"] = (
+                transactions_ds
                     .groupby("customer_id")
                     [sales_channel_id]
                     .shift(n)
@@ -159,23 +167,23 @@ def append_previous_purchases(
                     .astype(int))
     m, std = transactions_ds["price"].mean(), transactions_ds["price"].std()
     for n in range(1, ts_len + 1):
-        transaction_ds[f"{price}_{n}_mask"] = (
-                pd.notnull(transaction_ds[f"{price}_{n}"])
+        transactions_ds[f"{price}_{n}_mask"] = (
+                pd.notnull(transactions_ds[f"{price}_{n}"])
                     .astype(np.float32))
-        transaction_ds[f"{price}_{n}"] = (transaction_ds[f"{price}_{n}"]
+        transactions_ds[f"{price}_{n}"] = (transactions_ds[f"{price}_{n}"]
                 .fillna(pd.Series(
-                    np.random.normal(m, std, len(transaction_ds)))))
-    return transaction_ds
+                    np.random.normal(m, std, len(transactions_ds)))))
+    return transactions_ds
 
-def convert_transactions_csv(
-        out_fp : str,
+def load_transactions_ds(
+        out_fp: str=default_transact_parquet,
         transactions_fn: str=default_transact_fn,
+        test_submissions_fn: str="data/sample_submission.csv",
         ts_len: int=3,
         ):
     if not os.path.exists(out_fp):
-        test_submissions_fn = "data/sample_submission.csv"
         unique_customer_id = (
-            pd.read_csv(test_submission_fn, usecols=["customer_id"])
+            pd.read_csv(test_submissions_fn, usecols=["customer_id"])
             ["customer_id"])
         names = ["t_dat",
                  "customer_id",
@@ -193,23 +201,20 @@ def convert_transactions_csv(
             {
                 "customer_id": unique_customer_id,
                 "article_id": [-1] * len(unique_customer_id),
-                "test": [1] * len(unique_customer_id)
+                "test": [1] * len(unique_customer_id),
+                "t_dat": "2020-09-23",
+                "sales_channel_id": 0,
             })
         transactions_ds = pd.concat([transactions_ds, test_set],
                                     axis=0,
                                     ignore_index=True)
-        transactions_ds["sales_channel_id"] = (
-                transactions_ds["sales_channel_id"]
-                    .fillna(0).astype(int))
-        transactions_ds = append_previous_purchases(
-                transactions_ds,
-                ts_len=ts_len)
-        transactions_ds["t_dat"] = (
-                transactions_ds["t_dat"]
-                    .fillna("2020-09-23"))
+        transactions_ds.sort_values(["customer_id", "t_dat"], inplace=True)
         transactions_ds["t_dat"] = pd.to_datetime(
                 transactions_ds["t_dat"])
         transactions_ds.to_parquet(out_fp)
+    else:
+        transactions_ds = pd.read_parquet(out_fp)
+    return transactions_ds
 
 def write_vocabulary(
         articles_ds: pd.DataFrame,
@@ -287,3 +292,18 @@ def load_vocabulary(
         config[f"{col}_dim"] = len(vocabulary[col]) + 1
         config[f"{col}"] = fn
     return vocabulary
+
+if __name__=="__main__":
+    config_fn = "config-model.json"
+    with open(config_fn, "r") as f:
+        config = json.load(f)
+    articles_ds = load_articles_ds()
+    customers_ds = load_customers_ds()
+    write_vocabulary(articles_ds, customers_ds)
+    transactions_ds = load_transactions_ds(ts_len=config["ts_len"])
+    out_fp = "data/sequential.parquet"
+    if not os.path.exists(out_fp):
+        transactions_ds = append_previous_purchases(
+                transactions_ds, ts_len=config["ts_len"])
+        transactions_ds.to_parquet(out_fp)
+

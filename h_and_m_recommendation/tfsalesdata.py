@@ -47,6 +47,7 @@ def make_tfds(
         ts_len: int,
         ):
     _f = lambda x, y: y
+    _train = lambda x: x["test"][0] == tf.constant(0, dtype=tf.int64)
     _g1 = lambda x, y: x % config["mod_k"] <= config["n_train"]
     _g2 = (lambda x, y:
            (config["n_train"] < x % config["mod_k"])
@@ -62,7 +63,8 @@ def make_tfds(
                 lambda filename: tf.data.TFRecordDataset(filename)
                     .map(parse_f, num_parallel_calls=2),
                 cycle_length=4,
-                num_parallel_calls=tf.data.AUTOTUNE))
+                num_parallel_calls=tf.data.AUTOTUNE)
+            .filter(_train))
     xtrain = (
         transactions_tf
             .enumerate()
@@ -79,3 +81,23 @@ def make_tfds(
             .filter(_g3)
             .map(_f))
     return xtrain, xvalid, xtest
+
+def get_prediction_data(
+        tfrec_dir: str,
+        ):
+    _train = lambda x: x["test"][0] == tf.constant(1, dtype=tf.int64)
+    parse_f = lambda x: serialize.parse(x, ts_len=config["ts_len"])
+    tfrec_files = [os.path.join(tfrec_dir, f)
+                   for f in os.listdir(tfrec_dir)]
+    filenames = tf.data.Dataset.from_tensor_slices(tfrec_files)
+    transactions_tf = (
+        filenames
+            .interleave(
+                lambda filename: tf.data.TFRecordDataset(filename)
+                    .map(parse_f, num_parallel_calls=2),
+                cycle_length=4,
+                num_parallel_calls=tf.data.AUTOTUNE)
+            .filter(_train))
+    return transactions_tf
+
+

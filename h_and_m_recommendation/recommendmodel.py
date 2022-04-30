@@ -42,17 +42,24 @@ class ArticleModel(tf.keras.Model):
         super().__init__(**kwargs)
         output_type = "one_hot"
         self.config = config
-        articles_ds = pd.read_csv(config["articles_fn"])
-        customers_fn = pd.read_csv(config["customers_fn"])
-        #self.section_name_lookup = tf.lookup.StaticHashTable(
-        #        tf.lookup.KeyValueTensorInitializer(
-        #            tf.constant(lookups["section_name"][0], dtype=tf.int64),
-        #            tf.constant(lookups["section_name"][1], dtype=tf.int64)),
-        #        default_value=0)
-        #self.section_encoder = tf.keras.layers.Embedding(
-        #        config["section_name_dim"],
-        #        config["section_name_dim"]) // 4,
-        #        name="section_encoder") 
+        articles_ds = pd.read_parquet(config["articles_fn"])
+        customers_fn = pd.read_parquet(config["customers_fn"])
+        self.section_name_hashtable = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(
+                        articles_ds["article_id"].values,
+                        dtype=tf.int64),
+                    tf.constant(
+                        articles_ds["section_name"].values,
+                        dtype=tf.string)),
+                default_value=b"[UNK]")
+        self.section_name_lookup = tf.keras.layers.StringLookup(
+                vocabulary=config["section_name"],
+                name="section_name_lookup")
+        self.section_encoder = tf.keras.layers.Embedding(
+                config["section_name_dim"],
+                config["section_name_dim"] // 4,
+                name="section_encoder")
         self.product_group_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -83,7 +90,7 @@ class ArticleModel(tf.keras.Model):
         self.article_id_lookup = tf.keras.layers.IntegerLookup(
                 vocabulary=config["article_id"],
                 name="article_id_lookup")
-        self.emb = tf.keras.layers.Embedding(
+        self.article_id_embedding = tf.keras.layers.Embedding(
                 config["article_id_dim"],
                 config["article_embedding_dim"],
                 name="article_id_embedding")
@@ -99,31 +106,35 @@ class ArticleModel(tf.keras.Model):
                 vocabulary=config["graphical_appearance_name"],
                 name="graphical_vectorizer")
         self.graphical_encoder = tf.keras.layers.Embedding(
-                config["graphical_appearance_name_dim"] + 1,
+                config["graphical_appearance_name_dim"],
                 config["graphical_appearance_name_dim"] // 2,
                 name="graphical_encoder")
         self.colour_master_vec = tf.keras.layers.StringLookup(
                 vocabulary=config["perceived_colour_master_name"],
                 name="colour_master_vectorizer")
         self.colour_master_encoder = tf.keras.layers.Embedding(
-                config["perceived_colour_master_name_dim"] + 1,
+                config["perceived_colour_master_name_dim"],
                 config["perceived_colour_master_name_dim"] // 2,
                 name="colour_master_encoder")
         self.batch_norm = tf.keras.layers.BatchNormalization(
                 name="article_batch_norm")
+        self.dropout_0 = tf.keras.layers.Dropout(
+                0.20,
+                name="dropout_0")
         self.cat = tf.keras.layers.Concatenate(name="concatenate")
-        self.dense0 = tf.keras.layers.Dense(
+        self.dense_0 = tf.keras.layers.Dense(
                 units=config["factor_dim"],
                 activation="linear",
                 use_bias=False,
-                name="dense0")
+                name="dense_0")
 
     def call(self, inputs):
         x = inputs["article_id"]
         x = self.article_id_lookup(x)
-        x = self.emb(x)
-        #xsection = self.section_name_lookup.lookup(inputs["article_id"])
-        #xsection = self.section_encoder(xsection)
+        x = self.article_id_embedding(x)
+        xsection = self.section_name_hashtable.lookup(inputs["article_id"])
+        xsection = self.section_name_lookup(xsection)
+        xsection = self.section_encoder(xsection)
         xgroup = self.product_group_name_hashtable.lookup(
                 inputs["article_id"])
         xgroup = self.product_group_name_lookup(xgroup)
@@ -141,11 +152,12 @@ class ArticleModel(tf.keras.Model):
             xgroup,
             xgraphical,
             xcolourmaster,
-            #xsection,
+            xsection,
             ])
         x = self.flatten(x)
-        x = self.batch_norm(x)
-        x = self.dense0(x)
+        #x = self.batch_norm(x)
+        #x = self.dropout_0(x)
+        x = self.dense_0(x)
         return x
 
     def get_config(self):
@@ -162,19 +174,24 @@ class SequentialQueryModel(tf.keras.Model):
         super().__init__(**kwargs)
         articles_fn = config["articles_fn"]
         customers_fn = config["customers_fn"]
-        articles_ds = pd.read_csv(articles_fn)
-        customers_ds = pd.read_csv(customers_fn)
-        #self.section_name_lookup = tf.lookup.StaticHashTable(
-        #        tf.lookup.KeyValueTensorInitializer(
-        #            tf.constant(lookups["section_name"][0],
-        #                        dtype=tf.int64),
-        #            tf.constant(lookups["section_name"][1],
-        #                        dtype=tf.int64)),
-        #        default_value=0)
-        #self.section_encoder = tf.keras.layers.Embedding(
-        #        config["section_name_dim"] + 1,
-        #        config["section_name_dim"] // 4,
-        #        name="section_encoder")
+        articles_ds = pd.read_parquet(articles_fn)
+        customers_ds = pd.read_parquet(customers_fn)
+        self.section_name_hashtable = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(
+                        articles_ds["article_id"].values,
+                        dtype=tf.int64),
+                    tf.constant(
+                        articles_ds["section_name"].values,
+                        dtype=tf.string)),
+                default_value=b"[UNK]")
+        self.section_name_lookup = tf.keras.layers.StringLookup(
+                vocabulary=config["section_name"],
+                name="section_name_lookup")
+        self.section_encoder = tf.keras.layers.Embedding(
+                config["section_name_dim"],
+                config["section_name_dim"] // 4,
+                name="section_encoder")
         self.product_group_name_hashtable = tf.lookup.StaticHashTable(
                 tf.lookup.KeyValueTensorInitializer(
                     tf.constant(
@@ -208,8 +225,7 @@ class SequentialQueryModel(tf.keras.Model):
                         customers_ds["customer_id"].values,
                         dtype=tf.string),
                     tf.constant(
-                        customers_ds["club_member_status"]
-                            .fillna("[UNK]").values,
+                        customers_ds["club_member_status"].values,
                         dtype=tf.string)),
                 default_value=b"[UNK]")
         self.fashion_news_frequency_hashtable = tf.lookup.StaticHashTable(
@@ -263,33 +279,60 @@ class SequentialQueryModel(tf.keras.Model):
                 config["fashion_news_frequency_dim"],
                 config["fashion_news_frequency_dim"] - 1,
                 name="news_frequency_encoder")
-        self.batch_norm0 = tf.keras.layers.BatchNormalization(
+        self.batch_norm_0 = tf.keras.layers.BatchNormalization(
                 name="sequential_batch_norm_0")
-        self.batch_norm1 = tf.keras.layers.BatchNormalization(
+        self.dropout_0 = tf.keras.layers.Dropout(
+                0.20,
+                name="dropout_0",)
+        self.batch_norm_1 = tf.keras.layers.BatchNormalization(
                 name="sequential_batch_norm_1")
-        self.cat = tf.keras.layers.Concatenate(name="concatenate")
-        self.cat1 = tf.keras.layers.Concatenate(name="concatenate1")
+        self.dropout_1 = tf.keras.layers.Dropout(
+                0.20,
+                name="dropout_1",)
+        self.batch_norm_2 = tf.keras.layers.BatchNormalization(
+                name="sequential_batch_norm_2")
+        self.dropout_2 = tf.keras.layers.Dropout(
+                0.20,
+                name="dropout_2",)
+        self.batch_norm_3 = tf.keras.layers.BatchNormalization(
+                name="sequential_batch_norm_3")
+        self.dropout_3 = tf.keras.layers.Dropout(
+                0.20,
+                name="dropout_3",)
+        self.cat = tf.keras.layers.Concatenate(name="concatenate_0")
+        self.cat_1 = tf.keras.layers.Concatenate(name="concatenate_1")
         self.article_id_lookup = tf.keras.layers.IntegerLookup(
                 vocabulary=config["article_id"],
                 name="article_id_lookup")
-        self.emb = tf.keras.layers.Embedding(
+        self.article_id_embedding = tf.keras.layers.Embedding(
                 config["article_id_dim"],
                 config["article_embedding_dim"],
                 name="article_embedding")
         self.gru = tf.keras.layers.GRU(config["gru_dim"])
         self.flatten = tf.keras.layers.Flatten()
-        self.dense0 = tf.keras.layers.Dense(
+        self.dense_0 = tf.keras.layers.Dense(
+                units=config["hidden_dim"],
+                activation="sigmoid",
+                use_bias=False,
+                name="dense_0")
+        self.dense_1 = tf.keras.layers.Dense(
+                units=config["hidden_dim"],
+                activation="sigmoid",
+                use_bias=False,
+                name="dense_1")
+        self.output_0 = tf.keras.layers.Dense(
                 units=config["factor_dim"],
                 activation="linear",
                 use_bias=False,
-                name="dense0")
+                name="output_0")
 
     def call(self, inputs):
         x = inputs["article_id_hist"]
         x = self.article_id_lookup(x)
-        x = self.emb(x)
-        #xsection = self.section_name_lookup.lookup(inputs["article_id_hist"])
-        #xsection = self.section_encoder(xsection)
+        x = self.article_id_embedding(x)
+        xsection = self.section_name_hashtable.lookup(inputs["article_id_hist"])
+        xsection = self.section_name_lookup(xsection)
+        xsection = self.section_encoder(xsection)
         xgroup = self.product_group_name_hashtable.lookup(
                 inputs["article_id_hist"])
         xgroup = self.product_group_name_lookup(xgroup)
@@ -304,17 +347,16 @@ class SequentialQueryModel(tf.keras.Model):
         xcolourmaster = self.colour_master_encoder(xcolourmaster)
         #xprice = inputs["price"]
         #xprice = self.price_norm(xprice)
-        #xpricemask = inputs["price_mask"]
         x = self.cat([
             x,
             xgroup,
             xgraphical,
             xcolourmaster,
-            #xsection,
+            xsection,
             #xprice,
-            #xpricemask,
             ])
-        x = self.batch_norm0(x)
+        x = self.batch_norm_0(x)
+        x = self.dropout_0(x)
         x = self.gru(x)
         xclub = self.club_member_status_hashtable.lookup(
                 inputs["customer_id"])
@@ -326,16 +368,21 @@ class SequentialQueryModel(tf.keras.Model):
         xnews = self.fashion_news_frequency_lookup(xnews)
         xnews = self.news_encoder(xnews)
         xnews = self.flatten(xnews)
-        x = self.cat1([x, xclub, xnews])
-        x = self.batch_norm1(x)
-        x = self.dense0(x)
+        x = self.cat_1([x, xclub, xnews])
+        #x = self.batch_norm_1(x)
+        #x = self.dropout_1(x)
+        #x = self.dense_0(x)
+        #x = self.batch_norm_2(x)
+        #x = self.dropout_2(x)
+        #x = self.dense_1(x)
+        #x = self.batch_norm_3(x)
+        #x = self.dropout_3(x)
+        x = self.output_0(x)
         return x
 
     def get_config(self):
         config = super().get_config()
-        config.update({
-                "config": self.config,
-                })
+        config.update({"config": self.config})
         return config
 
 class RetrievalModel(tfrs.Model):
@@ -373,7 +420,5 @@ class RetrievalModel(tfrs.Model):
 
     def get_config(self):
         config = super().get_config()
-        config.update({
-                "config": self.config,
-                })
+        config.update({"config": self.config})
         return config
