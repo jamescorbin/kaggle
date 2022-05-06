@@ -84,6 +84,7 @@ def make_tfds(
 
 def get_prediction_data(
         tfrec_dir: str,
+        config: Dict[str, Any],
         ):
     _train = lambda x: x["test"][0] == tf.constant(1, dtype=tf.int64)
     parse_f = lambda x: serialize.parse(x, ts_len=config["ts_len"])

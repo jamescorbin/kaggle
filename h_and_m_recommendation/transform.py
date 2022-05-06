@@ -9,7 +9,7 @@ import numpy as np
 pt = os.path.abspath(os.path.join(
     __file__, os.pardir))
 sys.path.insert(1, pt)
-import rawdata
+import extract
 
 logger = logging.getLogger(name=__name__)
 
@@ -76,7 +76,7 @@ def write_chunk(
                       min((index + 1) * filesize, len(transactions_ds)))
     with tf.io.TFRecordWriter(out_fp) as writer:
         for i, row in transactions_ds.iloc[idx_range].iterrows():
-            data = rawdata.convert_transaction_to_datapoint(row, ts_len)
+            data = extract.convert_transaction_to_datapoint(row, ts_len)
             writer.write(serialize_example(data))
 
 def write_dataset(

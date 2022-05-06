@@ -1,0 +1,6 @@
+{
+		"max_sequence_length": 25,
+		"hidden_dim": 128,
+		"max_selections_per_batch": 5,
+		"version": "0.0.0"
+}

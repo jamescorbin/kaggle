@@ -16,8 +16,9 @@ sys.path.insert(1, pt)
 import serialize
 import rawdata
 import recommendmodel
-import tfsalesdata
+import load
 import tensorflow_recommenders as tfrs
+import mlflow
 
 frmt = ("[%(asctime)s] %(levelname)s "
         "[%(name)s.%(funcName)s:%(lineno)d] "
@@ -45,12 +46,12 @@ def run_training_loop(
     strategy = tf.distribute.get_strategy()
     batch_size = config["batch_size"] * strategy.num_replicas_in_sync
     with strategy.scope():
-        xtrain, xvalid, xtest = tfsalesdata.make_tfds(
+        xtrain, xvalid, xtest = load.make_tfds(
                 tfrec_dir,
                 config=config,
                 ts_len=ts_len)
-        #xtrain, xvalid, xtest = (xtrain.take(1_000), 
-        #       xvalid.take(5_000), xtest.take(1_000))
+        xtrain, xvalid, xtest = (xtrain.take(1_000),
+               xvalid.take(1_000), xtest.take(1_000))
         model = recommendmodel.RetrievalModel(
                 config,
                 name="model_5")
@@ -64,8 +65,7 @@ def run_training_loop(
                 profile_batch=0,
                 embeddings_freq=1,
                 embeddings_metadata=None,)
-        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-                model_save_pt,
+        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(model_save_pt,
                 monitor="val_loss",
                 verbose=0,
                 save_best_only=True,
@@ -83,7 +83,7 @@ def run_training_loop(
                 baseline=None,
                 restore_best_weights=True)
         callbacks = [tfboard, model_checkpoint, early_stopping]
-        model.fit(
+        hist = model.fit(
                 xtrain
                     .batch(batch_size, drop_remainder=True)
                     .prefetch(tf.data.AUTOTUNE),
@@ -94,9 +94,17 @@ def run_training_loop(
                 callbacks=callbacks)
         test_eval = model.evaluate(
                 xtest.batch(2**13),
-                callbacks=callbacks)
+                callbacks=callbacks,
+                return_dict=True)
+    for key, value in config.items():
+        if key not in ("batch_size", "shuffle"):
+            mlflow.log_param(key, value)
+    mlflow.log_metrics(test_eval)
     model.customer_model.save(customer_model_save)
     model.article_model.save(articles_model_save)
+    mlflow.log_artifact(articles_model_save)
+    mlflow.log_artifact(customer_model_save)
+    mlflow.log_artifact(config_fn)
 
 if __name__=="__main__":
     config_fn = "config-model.json"
@@ -105,10 +113,13 @@ if __name__=="__main__":
     model_save_pt = "data/model.hdf5"
     articles_model_save = "data/articles_model"
     customer_model_save = "data/customer_model"
-    run_training_loop(
-        config_fn,
-        tfrec_dir,
-        tfboard_log_dir,
-        model_save_pt,
-        articles_model_save,
-        customer_model_save)
+    mlflow.set_tracking_uri("file:///home/jec/Desktop/artifacts")
+    mlflow.set_experiment("h_and_m_recommendation")
+    with mlflow.start_run():
+        run_training_loop(
+            config_fn,
+            tfrec_dir,
+            tfboard_log_dir,
+            model_save_pt,
+            articles_model_save,
+            customer_model_save)

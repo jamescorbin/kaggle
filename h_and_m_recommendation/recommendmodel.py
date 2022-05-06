@@ -155,8 +155,8 @@ class ArticleModel(tf.keras.Model):
             xsection,
             ])
         x = self.flatten(x)
-        #x = self.batch_norm(x)
-        #x = self.dropout_0(x)
+        x = self.batch_norm(x)
+        x = self.dropout_0(x)
         x = self.dense_0(x)
         return x
 
@@ -234,14 +234,26 @@ class SequentialQueryModel(tf.keras.Model):
                         customers_ds["customer_id"].values,
                         dtype=tf.string),
                     tf.constant(
-                        customers_ds["fashion_news_frequency"]
-                            .fillna("[UNK]").values,
+                        customers_ds["fashion_news_frequency"],
                         dtype=tf.string)),
                 default_value=b"[UNK]")
+        self.age_hashtable = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    tf.constant(
+                        customers_ds["customer_id"].values,
+                        dtype=tf.string),
+                    tf.constant(
+                        customers_ds["age"],
+                        dtype=tf.float32)),
+                default_value=0.0)
         #self.price_norm = tf.keras.layers.Normalization(
         #        mean=config["price_mean"],
         #        variance=config["price_var"],
         #        name="price_norm")
+        self.age_norm = tf.keras.layers.Normalization(
+                mean=config["age_mean"],
+                variance=config["age_var"],
+                name="age_norm")
         self.product_group_name_lookup = tf.keras.layers.StringLookup(
                 vocabulary=config["product_group_name"],
                 name="product_group_name")
@@ -368,15 +380,17 @@ class SequentialQueryModel(tf.keras.Model):
         xnews = self.fashion_news_frequency_lookup(xnews)
         xnews = self.news_encoder(xnews)
         xnews = self.flatten(xnews)
-        x = self.cat_1([x, xclub, xnews])
-        #x = self.batch_norm_1(x)
-        #x = self.dropout_1(x)
-        #x = self.dense_0(x)
-        #x = self.batch_norm_2(x)
-        #x = self.dropout_2(x)
-        #x = self.dense_1(x)
-        #x = self.batch_norm_3(x)
-        #x = self.dropout_3(x)
+        xage = self.age_hashtable.lookup(inputs["customer_id"])
+        xage = self.age_norm(xage)
+        x = self.cat_1([x, xclub, xnews, xage])
+        x = self.batch_norm_1(x)
+        x = self.dropout_1(x)
+        x = self.dense_0(x)
+        x = self.batch_norm_2(x)
+        x = self.dropout_2(x)
+        x = self.dense_1(x)
+        x = self.batch_norm_3(x)
+        x = self.dropout_3(x)
         x = self.output_0(x)
         return x
 
@@ -413,9 +427,6 @@ class RetrievalModel(tfrs.Model):
             self.article_model(features))
 
     def compute_loss(self, features, training=False) -> tf.Tensor:
-        #return self.task(
-        #    self.customer_model(features),
-        #    self.article_model(features))
         return self(features)
 
     def get_config(self):
