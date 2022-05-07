@@ -22,26 +22,18 @@ import extract
 import tweetmodel
 import transform
 import load
+import train
 
 def main(config):
+    with open("config.json", "r") as f:
+        config = json.load(f)
     df_train = extract.load_train_data()
-    stopwords = extract.download_stopwords()
+    #stopwords = extract.download_stopwords()
     #df_train = transform.prepare_sentences(df_train, stopwords=stopwords)
     #transform.write_vocabulary(df_train)
+    #ds = load.get_tfds(df_train, config)
+    train.run_training_loop(df_train, config)
 
-    ds = tf.data.Dataset.from_tensor_slices(
-            {"text": df_train[["text"]].values})
-    ds_y = tf.data.Dataset.from_tensor_slices(
-            {"target": df_train[["target"]].values})
-    ds = ds.take(1_000)
-    ds = load.encode_dataset(ds, config)
-    for k in ds.take(10):
-        print(k)
-    #model = tweetmodel.build_bert_model(config)
-    model = tweetmodel.TweetModel(config)
-    ds = tf.data.Dataset.zip((ds, ds_y)).batch(32, drop_remainder=True)
-    model.fit(ds,
-            epochs=1,)
 
 
 

@@ -1,6 +1,14 @@
 {
-		"max_sequence_length": 25,
+		"bert_encoder_path": "/home/jec/model_repository/all_bert_models/small_bert_bert_en_uncased_L-12_H-768_A-12_2",
+		"batch_dim": 32,
+		"epochs_init": 10,
+		"epochs_tune": 10,
+		"shuffle_buffer": 1024,
+		"max_sequence_length": 50,
 		"hidden_dim": 128,
-		"max_selections_per_batch": 5,
+		"max_selections_per_batch": 32,
+		"train_k": 4,
+		"valid_k": 5,
+		"split_mod_k": 7,
 		"version": "0.0.0"
 }

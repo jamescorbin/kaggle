@@ -35,7 +35,7 @@ def run_training_loop(
         config_fn: str,
         tfrec_dir: str,
         tfboard_log_dir: str,
-        model_save_pt: str,
+        model_checkpoint_pt: str,
         articles_model_save: str,
         customer_model_save: str,
         ):
@@ -65,7 +65,8 @@ def run_training_loop(
                 profile_batch=0,
                 embeddings_freq=1,
                 embeddings_metadata=None,)
-        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(model_save_pt,
+        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
+                model_checkpoint_pt,
                 monitor="val_loss",
                 verbose=0,
                 save_best_only=True,

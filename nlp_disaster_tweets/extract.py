@@ -4,11 +4,12 @@ import pandas as pd
 import nltk
 from typing import Tuple
 
-def download_stopwords():
-    try:
-        nltk.download('stopwords')
-    except:
-        logger.error('...')
+def download_stopwords(download: bool=False):
+    if download:
+        try:
+            nltk.download('stopwords')
+        except:
+            logger.error('...')
     try:
         stopwords = (nltk.corpus.stopwords.words("english")
                 + ["u", "im", "st", "nd", "rd", "th"])

@@ -24,7 +24,7 @@ if __name__=="__main__":
     config_fn = "config-model.json"
     tfboard_log_dir = "data/tfboard"
     model_save_pt = "data/model"
-    model_save_pt = "data/model_checkpoint"
+    model_checkpoint_pt = "data/model_checkpoint"
     with open(config_fn, "r") as f:
         config = json.load(f)
     tf.random.set_seed(config["seed"])
