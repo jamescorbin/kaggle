@@ -28,14 +28,10 @@ def main(config):
     with open("config.json", "r") as f:
         config = json.load(f)
     df_train = extract.load_train_data()
-    #stopwords = extract.download_stopwords()
-    #df_train = transform.prepare_sentences(df_train, stopwords=stopwords)
+    stopwords = extract.download_stopwords()
+    df_train = transform.prepare_sentences(df_train, stopwords=stopwords)
     #transform.write_vocabulary(df_train)
-    #ds = load.get_tfds(df_train, config)
     train.run_training_loop(df_train, config)
-
-
-
 
 if __name__=="__main__":
     with open("config.json", "r") as f:

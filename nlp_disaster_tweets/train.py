@@ -18,8 +18,8 @@ def run_training_loop(ds, config):
             log_input_examples=True,
             log_model_signatures=True)
     batch_size = config["batch_dim"] * strategy.num_replicas_in_sync
-    with mlflow.start_run():
-        with strategy.scope():
+    with strategy.scope():
+        with mlflow.start_run():
             xtrain, xvalid, xtest = load.get_tfds(
                     ds,
                     config=config,)
@@ -53,43 +53,34 @@ def run_training_loop(ds, config):
                     baseline=None,
                     restore_best_weights=True)
             callbacks = [tfboard, model_checkpoint, early_stopping]
-            hist_0 = model.fit(
-                    xtrain
-                        .batch(batch_size, drop_remainder=True)
-                        .prefetch(tf.data.AUTOTUNE),
-                    validation_data=xvalid
-                        .batch(2**10)
-                        .prefetch(tf.data.AUTOTUNE),
-                    epochs=config["epochs_init"],
-                    callbacks=callbacks)
-            model.bert_layer.trainable = True
-            optimizer = tf.keras.optimizers.Adam(
-                    learning_rate=1e-5)
-            metrics = [tf.keras.metrics.BinaryAccuracy()]
-            loss = tf.keras.losses.BinaryCrossentropy(
-                    from_logits=False)
-            model.compile(
-                    optimizer=optimizer,
-                    loss={"target": loss},
-                    metrics={"target": metrics},)
-            hist_1 = model.fit(
-                    xtrain
-                        .batch(batch_size, drop_remainder=True)
-                        .prefetch(tf.data.AUTOTUNE),
-                    validation_data=xvalid
-                        .batch(2**10)
-                        .prefetch(tf.data.AUTOTUNE),
-                    epochs=config["epochs_tune"],
-                    callbacks=callbacks)
-            test_eval = model.evaluate(
-                    xtest.batch(2**10),
-                    callbacks=callbacks,
-                    return_dict=True)
-        for key, value in config.items():
-            mlflow.log_param(key, value)
-        for key, value in test_eval.items():
-            mlflow.log_metric(f"test_{key}", value)
-        model.save(model_save_pt)
-        mlflow.log_artifact(config_fn)
-
-
+            with mlflow.start_run(nested=True):
+                hist_0 = model.fit(
+                        xtrain
+                            .batch(batch_size, drop_remainder=True)
+                            .prefetch(tf.data.AUTOTUNE),
+                        validation_data=xvalid
+                            .batch(2**10)
+                            .prefetch(tf.data.AUTOTUNE),
+                        epochs=config["epochs_init"],
+                        callbacks=callbacks)
+            with mlflow.start_run(nested=True):
+                model.recompile_fine_tune()
+                hist_1 = model.fit(
+                        xtrain
+                            .batch(batch_size, drop_remainder=True)
+                            .prefetch(tf.data.AUTOTUNE),
+                        validation_data=xvalid
+                            .batch(2**10)
+                            .prefetch(tf.data.AUTOTUNE),
+                        epochs=config["epochs_tune"],
+                        callbacks=callbacks)
+                test_eval = model.evaluate(
+                        xtest.batch(2**10),
+                        callbacks=callbacks,
+                        return_dict=True)
+                for key, value in config.items():
+                    mlflow.log_param(key, value)
+                for key, value in test_eval.items():
+                    mlflow.log_metric(f"test_{key}", value)
+                model.save(model_save_pt)
+                mlflow.log_artifact(config_fn)

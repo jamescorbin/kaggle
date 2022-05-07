@@ -4,13 +4,8 @@ import tensorflow as tf
 import tensorflow_text as tf_text
 import load
 
-def load_bert_layer():
-    model_dir = os.path.join(
-            os.getenv("HOME"),
-            "model_repository",
-            "all_bert_models",
-            "small_bert_bert_en_uncased_L-4_H-256_A-4_2")
-    #bert_layer = tf.keras.models.load_model(model_dir)
+def load_bert_layer(config):
+    model_dir = config["bert_layer_path"]
     bert_layer = tf.saved_model.load(model_dir)
     return bert_layer
 
@@ -20,9 +15,7 @@ def build_two_layer_model():
                             dtype=tf.string,
                             name="words",)
     tokens = tf.text.WhitespaceTokenizer(input_0)
-
     #input1 = tf.keras.Input(sequence_length,
-
     #                        dtype=tf.dtypes.int32,
     #                        name="masks",)
     input2 = tf.keras.Input(sequence_length,
@@ -52,8 +45,8 @@ class TweetModel(tf.keras.Model):
     def __init__(self, config):
         super().__init__()
         out_dim = 1
-        self.bert_layer = load_bert_layer()
-        self.bert_layer.trainable = False
+        self.config = config
+        self.bert_layer = load_bert_layer(config)
         self.dense_0 = tf.keras.layers.Dense(
             config["hidden_dim"],
             activation=tf.nn.sigmoid,
@@ -63,12 +56,17 @@ class TweetModel(tf.keras.Model):
             activation=tf.nn.sigmoid,
             name="dense_1",)
         self.dropout_0 = tf.keras.layers.Dropout(0.25, name="dropout_0")
+        self.dropout_1 = tf.keras.layers.Dropout(0.25, name="dropout_1")
         self.dense_2 = tf.keras.layers.Dense(
             out_dim,
             activation=tf.nn.sigmoid,
             name="final",)
+        self.flatten = tf.keras.layers.Flatten(name="flatten")
+        self.batch_norm_0 = tf.keras.layers.BatchNormalization(
+                name="batch_norm_0")
+        self.bert_layer.trainable = False
         optimizer = tf.keras.optimizers.Adam(
-                learning_rate=1e-5)
+                learning_rate=config["learning_rate_init"])
         metrics = [tf.keras.metrics.BinaryAccuracy(threshold=0.5)]
         loss = tf.keras.losses.BinaryCrossentropy(
                 from_logits=False)
@@ -77,16 +75,41 @@ class TweetModel(tf.keras.Model):
                 loss={"target": loss},
                 metrics={"target": metrics},)
 
+    def recompile_fine_tune(self):
+        self.bert_layer.trainable = True
+        optimizer = tf.keras.optimizers.Adam(
+                learning_rate=self.config["learning_rate_tune"])
+        metrics = [tf.keras.metrics.BinaryAccuracy()]
+        loss = tf.keras.losses.BinaryCrossentropy(
+                from_logits=False)
+        self.compile(
+                optimizer=optimizer,
+                loss={"target": loss},
+                metrics={"target": metrics},)
+
+    def get_config(self):
+        ret = super().get_config()
+        ret.updtate({
+            "config": self.config})
+        return ret
+
     def call(self, inputs):
         x = self.bert_layer(
             {"input_word_ids": inputs["input_word_ids"],
             "input_mask": inputs["input_mask"],
             "input_type_ids": inputs["input_type_ids"],
              })
-        pooled_output = x["pooled_output"]
+        x0 = x["pooled_output"]
         x1, x2, x3 = x["encoder_outputs"], x["sequence_output"], x["default"]
-        x = self.dense_0(pooled_output)
+        #x = self.dense_0(pooled_output)
+        #print(x2)
+        #x2 = self.flatten(x2)
+        #print("1", x2)
+        x = x2
         x = self.dropout_0(x)
+        x = self.dense_0(x)
+        x = self.batch_norm_0(x)
+        x = self.dropout_1(x)
         x = self.dense_1(x)
         x = self.dense_2(x)
         x = {"target": x}
