@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import logging
 from typing import Dict, List, Any
 import tensorflow as tf
@@ -8,34 +9,9 @@ import numpy as np
 pt = os.path.abspath(os.path.join(
     __file__, os.pardir))
 sys.path.insert(1, pt)
-import rawdata
+import extract
 
 logger = logging.getLogger(name=__name__)
-
-def run_serialization(
-        articles_fn: str,
-        customers_fn: str,
-        transactions_fn: str,
-        tfrec_dir: str,
-        vocab_dir: str,
-        transactions_parquet: str="./data/transactions.parquet",
-        ts_len: int=4,
-        ) -> None:
-    customers_ds = rawdata.load_customers_ds(customers_fn)
-    articles_ds = rawdata.load_articles_ds(articles_fn)
-    vocabulary = rawdata.write_vocabulary(
-            articles_ds,
-            customers_ds,
-            parent_dir=vocab_dir)
-    rawdata.convert_transactions_csv(
-            transactions_parquet,
-            vocabulary,
-            ts_len=ts_len)
-    write_dataset(
-            transactions_parquet,
-            vocabulary,
-            tfrec_dir=tfrec_dir,
-            ts_len=ts_len)
 
 def _byteslist(value):
     return tf.train.Feature(
@@ -49,8 +25,9 @@ def _floatlist(value):
 
 def serialize_example(ds: Dict[str, np.array]):
     feature = {
-        "customer_id": _int64list(ds["customer_id"]),
+        "customer_id": _byteslist(ds["customer_id"]),
         #"t_dat": _byteslist(ds["t_dat"]),
+        "test": _int64list(ds["test"]),
         "article_id": _int64list(ds["article_id"]),
         "article_id_hist": _int64list(ds["article_id_hist"]),
         "sales_channel_id": _int64list(ds["sales_channel_id"]),
@@ -70,8 +47,9 @@ def tf_serialize_example(ds):
 
 def parse(example, ts_len: int):
     feature_description = {
-        "customer_id": tf.io.FixedLenFeature([1], tf.int64),
+        "customer_id": tf.io.FixedLenFeature([1], tf.string),
         #"t_dat": tf.io.FixedLenFeature([1], tf.string),
+        "test": tf.io.FixedLenFeature([1], tf.int64),
         "article_id":
                 tf.io.FixedLenFeature([1], tf.int64),
         "article_id_hist":
@@ -98,23 +76,18 @@ def write_chunk(
                       min((index + 1) * filesize, len(transactions_ds)))
     with tf.io.TFRecordWriter(out_fp) as writer:
         for i, row in transactions_ds.iloc[idx_range].iterrows():
-            data = rawdata.convert_transaction_to_datapoint(row, ts_len)
+            data = extract.convert_transaction_to_datapoint(row, ts_len)
             writer.write(serialize_example(data))
 
 def write_dataset(
             transactions_fn: str,
-            vocabulary: Dict[str, List[str]],
             tfrec_dir: str="tfrec",
             ts_len: int=4,
             filesize: int=1_000_000):
     if not os.path.exists(tfrec_dir):
         os.mkdir(tfrec_dir)
-    shards = 32
+    shards = 34
     transactions_ds = pd.read_parquet(transactions_fn)
-    transactions_ds.drop(
-            transactions_ds.index[transactions_ds["test"]==1],
-            axis=0,
-            inplace=True)
     for i in range(shards):
         write_chunk(
                 transactions_ds,
@@ -124,4 +97,13 @@ def write_dataset(
                 ts_len=ts_len,
                 tfrec_fn=f"{i:03d}.tfrec")
 
-
+if __name__=="__main__":
+    config_fn = "config-model.json"
+    tfrec_dir = "data/tfrec"
+    with open(config_fn, "r") as f:
+        config = json.load(f)
+    sequential_fn = "data/sequential.parquet"
+    write_dataset(
+            sequential_fn,
+            tfrec_dir=tfrec_dir,
+            ts_len=config["ts_len"],)

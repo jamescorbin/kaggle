@@ -1,0 +1,17 @@
+{
+		"seed": 50,
+		"bert_layer_path": "/home/jec/model_repository/all_bert_models/small_bert_bert_en_uncased_L-12_H-768_A-12_2",
+		"batch_dim": 2,
+		"epochs_init": 16,
+		"epochs_tune": 16,
+		"learning_rate_init": 0.012,
+		"learning_rate_tune": 0.00001,
+		"shuffle_buffer": 128,
+		"max_sequence_length": 60,
+		"hidden_dim": 128,
+		"max_selections_per_batch": 4,
+		"train_k": 4,
+		"valid_k": 5,
+		"split_mod_k": 7,
+		"version": "0.0.0"
+}

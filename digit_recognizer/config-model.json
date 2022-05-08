@@ -1,15 +1,16 @@
 {
+		"image_shape": [28, 28, 1],
 		"dense_dim_0": 40,
-		"conv2d_dim":
+		"conv2d_dim": 30,
 		"conv2d_kernel": [5, 5],
 		"pool2d_size": [3, 3],
-		"batch_size": 32,
-		"epochs": 10,
+		"batch_dim": 32,
+		"epochs": 15,
 		"split_mod_k": 10,
 		"train_k": 6,
 		"valid_k": 8,
 		"learning_rate": 0.001,
-		"shuffle": 1000,
+		"shuffle_buffer": 1000,
 		"seed": 50,
 		"version": "0.0.0"
 }

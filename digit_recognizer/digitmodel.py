@@ -7,7 +7,7 @@ def build_model(
             config: Dict[str, Any],
             output_dim: int=10,
             ) -> tf.keras.Model:
-    img_inputs = tf.keras.Input(shape=(_height, _width, 1))
+    img_inputs = tf.keras.Input(shape=config["image_shape"])
     conv2d_layer = tf.keras.layers.Conv2D(
             filters=config["conv2d_dim"],
             kernel_size=config["conv2d_kernel"],
