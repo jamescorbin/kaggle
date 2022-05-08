@@ -23,26 +23,24 @@ def augment_train(x_train: tf.data.Dataset,
     x_train.map(_f)
     return x_train
 
-def test_image_transform() -> None:
+def test_image_transform(ds, config) -> None:
     import matplotlib.pyplot as plt
-    dims = [192, 224, 331, 512]
-    dim = dims[-1]
-    ds = get_dataset(dim,
-                    repeat=None,
-                    buffer_size=None,
-                    batch_size=None,
-                    apply_transformation=False,
-                    train_test="train",)
-    ds = ds.map(lambda x, y: x)
+    import tensorflow_datasets as tfds
+    dim = config["image_shape"][0]
+    #ds = ds.map(lambda x, y: x["image"])
     ds = ds.map(lambda x: x["image"])
-    ds = ds.skip(100).take(1).repeat(2)
-    ds = tfds.as_numpy(ds)
-    it = iter(ds)
-    ds0 = next(it)
-    ds1 = transform(next(it))
-    fix, ax = plt.subplots(1, 2)
-    ax[0].imshow(ds0)
-    ax[1].imshow(ds1)
+    ims = []
+    ds = ds.take(1).repeat(9).batch(1)
+    for k in ds.unbatch().take(1):
+        ims.append(k)
+    ds = ds.map(transform)
+    ds = ds.unbatch().take(3)
+    for k in ds:
+        ims.append(k)
+    fix, ax = plt.subplots(2, 2)
+    ax[0][0].imshow(ims[0])
+    ax[1][0].imshow(ims[1])
+    ax[0][1].imshow(ims[2])
+    ax[1][1].imshow(ims[3])
     plt.savefig("test_image.png")
-
 

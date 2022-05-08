@@ -9,8 +9,8 @@ def get_dataset(x_ds, config):
     x_ds = tf.data.Dataset.zip((x_ds.map(_f1), x_ds.map(_f2)))
     _g1 = lambda x, y: x % config["split_mod_k"] <= config["train_k"]
     _g2 = (lambda x, y:
-                    (x % config["split_mod_k"] > config["train_k"])
-                    & (x % config["split_mod_k"] <= config["valid_k"]))
+            (x % config["split_mod_k"] > config["train_k"])
+            & (x % config["split_mod_k"] <= config["valid_k"]))
     _g3 = lambda x, y: x % config["split_mod_k"] > config["valid_k"]
     _h = lambda x, y: y
     x_train = (x_ds

@@ -1,6 +1,12 @@
 import sys
 import os
 from typing import Dict, Any, Tuple
+import tensorflow as tf
+
+def get_image_layer(config):
+    pt = config["image_layer_path"]
+    image_layer = tf.saved_model.load(pt)
+    return image_layer
 
 class FlowerModel(tf.keras.Model):
     def __init__(self,
@@ -10,6 +16,7 @@ class FlowerModel(tf.keras.Model):
         super().__init__(**kwargs)
         self.config = config
         from tensorflow.keras.applications import DenseNet201
+        self.net = get_image_layer(config)
         self.rnet = DenseNet201(
                 input_shape=config["image_shape"],
                 weights="imagenet",
@@ -24,11 +31,11 @@ class FlowerModel(tf.keras.Model):
                 name="pooling")
         self.flat = tf.keras.layers.Flatten(
                 name="flatten_pooling")
-        self.dense_hidden = tf.keras.layers.Dense(
+        self.dense_hidden_0 = tf.keras.layers.Dense(
                 units=config["hidden_dim_0"],
                 activation="relu",
-                name="dense_hidden")
-        self.dropout = tf.keras.layers.Dropout(
+                name="dense_hidden_0")
+        self.dropout_0 = tf.keras.layers.Dropout(
                 config["dropout_rate_0"],
                 name="dropout_layer")
         self.out_layer = tf.keras.layers.Dense(
@@ -46,6 +53,12 @@ class FlowerModel(tf.keras.Model):
                       "label": None,
                       "id": None},
                 metrics={"class": [metric]})
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "config": self.config})
+        return config
 
     def set_trainable_recompile(self):
         self.rnet.trainable = True
@@ -65,8 +78,8 @@ class FlowerModel(tf.keras.Model):
         x = self.rnet(x)
         x = self.pooling(x)
         x = self.flat(x)
-        x = self.dense_hidden(x)
-        x = self.dropout(x)
+        x = self.dense_hidden_0(x)
+        x = self.dropout_0(x)
         x = self.out_layer(x)
         label = tf.reshape(
                 tf.math.top_k(x, k=1).indices,

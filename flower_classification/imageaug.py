@@ -105,12 +105,12 @@ def get_random_scale(xscl_std: tf.Tensor, yscl_std: tf.Tensor) -> tf.Tensor:
 @tf.function
 def get_random_transformation(
             th_std: tf.Tensor=tf.constant(15.0),
-            yshr_std: tf.Tensor=tf.constant(0.2),
-            xshr_std: tf.Tensor=tf.constant(0.2),
+            yshr_std: tf.Tensor=tf.constant(0.15),
+            xshr_std: tf.Tensor=tf.constant(0.15),
             xd_std: tf.Tensor=tf.constant(20.0),
             yd_std: tf.Tensor=tf.constant(20.0),
-            sclx0: tf.Tensor=tf.constant(0.2),
-            scly0: tf.Tensor=tf.constant(0.2),
+            sclx0: tf.Tensor=tf.constant(0.15),
+            scly0: tf.Tensor=tf.constant(0.15),
             ) -> tf.Tensor:
     rot_matrix = get_random_rotation(th_std)
     height_shear_matrix = get_random_shear_height(yshr_std)
@@ -136,10 +136,13 @@ def apply_affine_transform(
     to launching on a TPU.
     There are methods like tf.keras.layers.RandomRotation
     that solve this issue.
+
+    Modified to accept batched inputs.
+    If not batched, apply batch_size == 1
     """
     zero = tf.constant(0, dtype=tf.int32)
-    dim = tf.gather(tf.shape(img), zero)
-    print("dim", dim)
+    one = tf.constant(1, dtype=tf.int32)
+    dim = tf.gather(tf.shape(img), one)
     d = tf.cast(dim // 2, tf.float32)
     iidxs = (tf.tile(
         tf.reshape(
@@ -156,6 +159,15 @@ def apply_affine_transform(
     k3 = tf.reshape(k2, (dim * dim, 3))
     k4 = tf.clip_by_value(k3, 0, dim - 1)
     k5 = tf.slice(k4, (0, 0), (dim * dim, 2))
-    gat = tf.gather_nd(params=img, indices=k5)
-    new_img = tf.reshape(gat, (dim, dim, 3))
+    # k5 removes affine shift dummy dimension
+    k6 = tf.tile(
+        tf.reshape(k5, (1, dim * dim, 2)),
+        [tf.gather(tf.shape(img), zero), 1, 1])
+    # tile for batch size
+    gat = tf.gather_nd(
+            params=img,
+            indices=k6,
+            batch_dims=1,
+            )
+    new_img = tf.reshape(gat, (-1, dim, dim, 3),)
     return new_img

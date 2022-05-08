@@ -24,7 +24,8 @@ def read_tfrecord(example,
             "image": tf.io.FixedLenFeature([], tf.string),
             "id": tf.io.FixedLenFeature([], tf.string)}
     if labeled:
-        tfrec_format["class"] = tf.io.FixedLenFeature([], tf.int64)
+        tfrec_format["class"] = tf.io.FixedLenFeature(
+                [], tf.int64)
     parsed = tf.io.parse_single_example(
             example,
             tfrec_format)
@@ -52,9 +53,12 @@ def get_training_dataset(
                 "tpu-getting-started")
     dirname = lambda x: f"tfrecords-jpeg-{x}x{x}"
     dim = config["image_shape"][0]
-    tf_recs = tf.io.gfile.glob(
-            f"{top_dir}/{dirname(dim)}/"
-            "(train|valid)/*.tfrec")
+    search_string = [
+        rf"{top_dir}/{dirname(dim)}/"
+            r"train/*.tfrec",
+        rf"{top_dir}/{dirname(dim)}/"
+            r"val/*.tfrec"]
+    tf_recs = tf.io.gfile.glob(search_string)
     read_f = lambda x: read_tfrecord(x,
             dim=dim,
             labeled=True,)
