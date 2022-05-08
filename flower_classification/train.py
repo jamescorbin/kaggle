@@ -1,30 +1,37 @@
-import sys
-import os
-import mlflow
-import tensorflow as tf
-import load
-import tweetmodel
+def get_strategy() -> Tuple[Optional["tpu"], Optional["strategy"]]:
+    try:
+        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
+        print("Running on TPU ", tpu.master())
+    except ValueError:
+        tpu = None
+    if tpu:
+        tf.config.experimental_connect_to_cluster(tpu)
+        tf.tpu.experimental.initialize_tpu_system(tpu)
+        strategy = tf.distribute.experimental.TPUStrategy(tpu)
+    else:
+        strategy = tf.distribute.get_strategy()
+    return tpu, strategy
 
-def run_training_loop(ds, config):
+
+
+def run_training_loop():
     config_fn = "config.json"
     tfrec_dir = "data/tfrec"
     tfboard_log_dir = "data/tfboard"
     model_save_pt = "data/model"
     model_checkpoint_pt = "data/checkpoint"
-    strategy = tf.distribute.get_strategy()
     tf.random.set_seed(config["seed"])
+    tpu, strategy = get_strategy()
     mlflow.set_tracking_uri("file:///home/jec/Desktop/artifacts")
     mlflow.set_experiment("disaster_tweets")
     mlflow.tensorflow.autolog(
             log_input_examples=True,
             log_model_signatures=True)
-    batch_size = config["batch_dim"] * strategy.num_replicas_in_sync
+    batch_size = config["batch_size"] * strategy.num_replicas_in_sync
     with strategy.scope():
         with mlflow.start_run():
-            xtrain, xvalid, xtest = load.get_tfds(
-                    ds,
-                    config=config,)
-            model = tweetmodel.TweetModel(config)
+            x_train, x_valid, x_test = get_training_dataset(config)
+            x_train = augment_train(x_train, batch_size, config=config)
             tfboard = tf.keras.callbacks.TensorBoard(
                     log_dir=tfboard_log_dir,
                     histogram_freq=1,
@@ -54,31 +61,25 @@ def run_training_loop(ds, config):
                     baseline=None,
                     restore_best_weights=True)
             callbacks = [tfboard, model_checkpoint, early_stopping]
+            model = FlowerModel(
+                    config=config,
+                    name="flower_model")
             with mlflow.start_run(nested=True):
-                hist_0 = model.fit(
-                        xtrain
-                            .batch(batch_size, drop_remainder=True)
-                            .prefetch(tf.data.AUTOTUNE),
-                        validation_data=xvalid
-                            .batch(2**10)
-                            .prefetch(tf.data.AUTOTUNE),
-                        epochs=config["epochs_init"],
-                        callbacks=callbacks)
-            with mlflow.start_run(nested=True):
-                model.recompile_fine_tune()
-                hist_1 = model.fit(
-                        xtrain
-                            .batch(batch_size, drop_remainder=True)
-                            .prefetch(tf.data.AUTOTUNE),
-                        validation_data=xvalid
-                            .batch(2**10)
-                            .prefetch(tf.data.AUTOTUNE),
-                        epochs=config["epochs_tune"],
-                        callbacks=callbacks)
-                test_eval = model.evaluate(
-                        xtest.batch(2**10),
+                hist0 = model.fit(
+                        ds_train,
+                        validation_data=x_valid.batch(batch_size),
                         callbacks=callbacks,
-                        return_dict=True)
+                        epochs=config["epochs_init"])
+            with mlflow.start_run(nested=True):
+                model.set_trainable_recompile()
+                hist1 = model.fit(
+                        ds_train,
+                        validation_data=ds_valid.batch(batch_size),
+                        epochs=config["epochs_tune"],
+                        callbacks=[early_stopping])
+                test_eval = model.evaluate(
+                        x_test.batch(batch_size),
+                        callbacks=callbacks)
                 for key, value in config.items():
                     mlflow.log_param(key, value)
                 for key, value in test_eval.items():

@@ -51,11 +51,11 @@ class TweetModel(tf.keras.Model):
             config["hidden_dim"],
             activation=tf.nn.sigmoid,
             name="dense_0",)
-        self.dense_1 = tf.keras.layers.Dense(
-            config["hidden_dim"],
-            activation=tf.nn.sigmoid,
-            name="dense_1",)
-        self.dropout_0 = tf.keras.layers.Dropout(0.25, name="dropout_0")
+        #self.dense_1 = tf.keras.layers.Dense(
+        #    config["hidden_dim"],
+        #    activation=tf.nn.sigmoid,
+        #    name="dense_1",)
+        #self.dropout_0 = tf.keras.layers.Dropout(0.25, name="dropout_0")
         self.dropout_1 = tf.keras.layers.Dropout(0.25, name="dropout_1")
         self.dense_2 = tf.keras.layers.Dense(
             out_dim,
@@ -106,11 +106,11 @@ class TweetModel(tf.keras.Model):
         #x2 = self.flatten(x2)
         #print("1", x2)
         x = x2
-        x = self.dropout_0(x)
+        #x = self.dropout_0(x)
         x = self.dense_0(x)
-        x = self.batch_norm_0(x)
+        #x = self.batch_norm_0(x)
         x = self.dropout_1(x)
-        x = self.dense_1(x)
+        #x = self.dense_1(x)
         x = self.dense_2(x)
         x = {"target": x}
         return x

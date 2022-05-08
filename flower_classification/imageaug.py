@@ -125,9 +125,10 @@ def get_random_transformation(
                         shift_matrix))))
 
 @tf.function
-def apply_affine_transform(img: tf.Tensor,
-                           mat: tf.Tensor,
-                           ) -> tf.Tensor:
+def apply_affine_transform(
+        img: tf.Tensor,
+        mat: tf.Tensor,
+        ) -> tf.Tensor:
     """
     This method was used due to the
     tf.keras.preprocessing.image.apply_affine_transformation
@@ -138,6 +139,7 @@ def apply_affine_transform(img: tf.Tensor,
     """
     zero = tf.constant(0, dtype=tf.int32)
     dim = tf.gather(tf.shape(img), zero)
+    print("dim", dim)
     d = tf.cast(dim // 2, tf.float32)
     iidxs = (tf.tile(
         tf.reshape(
