@@ -92,38 +92,42 @@ def encode_categorical(
         df_train: pd.DataFrame,
         ) -> Tuple[pd.DataFrame, sklpre.OrdinalEncoder]:
     cat_map = sklpre.OrdinalEncoder(
-                handle_unknown="use_encoded_value",
-                unknown_value=-1)
-    df_train[cat_feats] = (cat_map
-                           .fit_transform(df_train[cat_feats]))
-    df_train[cat_feats] = df_train[cat_feats].fillna(-1).astype(int)
+            handle_unknown="use_encoded_value",
+            unknown_value=-1)
+    df_train[cat_feats] = (
+            cat_map.fit_transform(df_train[cat_feats]))
+    df_train[cat_feats] = df_train[cat_feats].fillna(0).astype(int)
     return df_train, cat_map
 
-def scale_continuous(df_train: pd.DataFrame,
-                     ) -> Tuple[pd.DataFrame, sklpre.StandardScaler]:
+def scale_continuous(
+        df_train: pd.DataFrame,
+        ) -> Tuple[pd.DataFrame, sklpre.StandardScaler]:
     std_scl = sklpre.StandardScaler()
     df_train[cont_feats] = std_scl.fit_transform(df_train[cont_feats])
     df_train[cont_feats] = df_train[cont_feats].fillna(0)
     return df_train, std_scl
 
-def encode_onehot(df_train: pd.DataFrame,
-                  ) -> Tuple[pd.DataFrame, sklpre.OneHotEncoder]:
-    one_enc = sklpre.OneHotEncoder(sparse=False,
-                                   handle_unknown="ignore")
+def encode_onehot(
+        df_train: pd.DataFrame,
+        ) -> Tuple[pd.DataFrame, sklpre.OneHotEncoder]:
+    one_enc = sklpre.OneHotEncoder(
+            sparse=False,
+            handle_unknown="ignore")
     df_aux = pd.DataFrame(
-        one_enc.fit_transform(df_train[cat_feats]),
-        index=df_train.index)
+            one_enc.fit_transform(df_train[cat_feats]),
+            index=df_train.index)
     df_train.drop(cat_feats, axis=1, inplace=True)
     df_train = df_train.join(df_aux)
     return df_train, one_enc
 
-def transform_price(y_train: np.array,
-                    epsilon: float=1e-6,
-                    ) -> Tuple[np.array, sklpre.StandardScaler]:
+def transform_price(
+        ds: pd.DataFrame,
+        epsilon: float=1e-6,
+        ) -> Tuple[np.array, sklpre.StandardScaler]:
     prc_scl = sklpre.StandardScaler()
-    y_train = np.log(y_train + epsilon)
-    y_train = prc_scl.fit_transform(y_train)
-    return y_train, prc_scl
+    ds["SalePrice"] = np.log(ds[["SalePrice"]] + epsilon)
+    ds["SalePrice"] = prc_scl.fit_transform(ds[["SalePrice"]])
+    return ds, prc_scl
 
 def transform(df: pd.DataFrame,
               cat_map: sklpre.OrdinalEncoder,

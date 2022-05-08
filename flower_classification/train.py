@@ -5,6 +5,8 @@ from typing import Tuple, Optional
 import tensorflow as tf
 import mlflow
 import extract
+import load
+import flowerclassifier
 
 def get_strategy() -> Tuple[Optional["tpu"], Optional["strategy"]]:
     try:
@@ -69,7 +71,7 @@ def run_training_loop():
                     baseline=None,
                     restore_best_weights=True)
             callbacks = [tfboard, model_checkpoint, early_stopping]
-            model = FlowerModel(
+            model = flowerclassifier.FlowerModel(
                     config=config,
                     name="flower_model")
             with mlflow.start_run(nested=True):
@@ -82,12 +84,13 @@ def run_training_loop():
                 model.set_trainable_recompile()
                 hist1 = model.fit(
                         x_train,
-                        validation_data=ds_valid.batch(2**10),
+                        validation_data=x_valid.batch(2**10),
                         epochs=config["epochs_tune"],
                         callbacks=callbacks)
                 test_eval = model.evaluate(
                         x_test.batch(batch_size),
-                        callbacks=callbacks)
+                        callbacks=callbacks,
+                        return_dict=True)
                 for key, value in config.items():
                     mlflow.log_param(key, value)
                 for key, value in test_eval.items():
