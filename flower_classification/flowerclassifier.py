@@ -4,8 +4,13 @@ from typing import Dict, Any, Tuple
 import tensorflow as tf
 
 def get_image_layer(config):
-    pt = config["image_layer_path"]
-    image_layer = tf.saved_model.load(pt)
+    #pt = config["image_layer_path"]
+    #image_layer = tf.saved_model.load(pt)
+    from tensorflow.keras.applications import DenseNet201
+    image_layer = DenseNet201(
+            input_shape=config["image_shape"],
+            weights="imagenet",
+            include_top=False,)
     return image_layer
 
 class FlowerModel(tf.keras.Model):
@@ -15,18 +20,8 @@ class FlowerModel(tf.keras.Model):
                  ):
         super().__init__(**kwargs)
         self.config = config
-        from tensorflow.keras.applications import DenseNet201
         self.net = get_image_layer(config)
-        self.rnet = DenseNet201(
-                input_shape=config["image_shape"],
-                weights="imagenet",
-                include_top=False,)
-        #from tensorflow.keras.applications import Xception
-        #self.rnet = Xception(
-        #        input_shape=config["image_shape"],
-        #        weights="imagenet",
-        #        include_top=False,)
-        self.rnet.trainable = False
+        self.net.trainable = False
         self.pooling = tf.keras.layers.GlobalAveragePooling2D(
                 name="pooling")
         self.flat = tf.keras.layers.Flatten(
@@ -61,7 +56,7 @@ class FlowerModel(tf.keras.Model):
         return config
 
     def set_trainable_recompile(self):
-        self.rnet.trainable = True
+        self.net.trainable = True
         loss = tf.keras.losses.SparseCategoricalCrossentropy()
         metric = tf.keras.metrics.SparseCategoricalAccuracy()
         opt = tf.keras.optimizers.Adam(
@@ -75,7 +70,7 @@ class FlowerModel(tf.keras.Model):
 
     def call(self, inputs):
         x = inputs["image"]
-        x = self.rnet(x)
+        x = self.net(x)
         x = self.pooling(x)
         x = self.flat(x)
         x = self.dense_hidden_0(x)
